@@ -1,6 +1,6 @@
 """
 Generation core — one streaming path, backend-agnostic (managed llama.cpp,
-LM Studio, Ollama). No Grok-refine loop, no clause grafting. Generate, clean,
+LM Studio, Ollama). No external-refine loop, no clause grafting. Generate, clean,
 anchor. That's it.
 """
 

@@ -239,7 +239,7 @@ def get_scenario_data(key):
 
 def _python_string_literal(text: str) -> str:
     """Escape text as a double-quoted Python string."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
     return f'"{escaped}"'
 
 

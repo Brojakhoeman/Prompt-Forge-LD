@@ -1,5 +1,5 @@
 """
-SSE generation API for Grok Prompt Lab.
+SSE generation API for PromptForge LD.
 """
 
 import asyncio

@@ -942,6 +942,27 @@ def render_act_block(intent, scenario_block, *, pov=False, pov_gender="female",
     return "\n".join(out) + "\n"
 
 
+def _speech_topic(intent):
+    """Extract a named speech subject from the intent — 'talks about apples',
+    'explains the plan', 'rants about traffic' → the topic string, else ''."""
+    t = (intent or "").strip()
+    if not t:
+        return ""
+    m = re.search(
+        r"\b(?:talks?|talking|speaks?|speaking|chats?|chatting|rants?|ranting|"
+        r"discuss(?:es)?|discussing|explains?|explaining|describes?|describing|"
+        r"tells?\s+(?:me|us|him|her|them)?\s*about|goes?\s+on\s+about)\b"
+        r"\s*(?:about|of|on)?\s+(.{3,80}?)(?:[.,;!?]|$)",
+        t, re.I)
+    if not m:
+        return ""
+    topic = m.group(1).strip().rstrip(".")
+    # "dirty to me" etc. is a register cue, not a topic
+    if re.match(r"^dirty\b", topic, re.I):
+        return ""
+    return topic
+
+
 def dialogue_block(*, tier="standard", intent="", scenario_block="",
                    explicit=False, seed=None, lines_per_register=12,
                    use_adlibs=True, pov=False, pov_gender="female"):
@@ -968,14 +989,21 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
     seen = set()
     active = [k for k in active if not (k in seen or seen.add(k))]
 
-    out = ["\n━━ DIALOGUE BANK — PICK LINES FROM HERE ━━"]
+    out = ["\n━━ DIALOGUE BANK — VOICE GUIDE FOR THIS SCENE ━━"]
     out.append(
-        "Spoken lines MUST be drawn from the pools below (verbatim, or lightly "
-        "inflected to fit the moment — change a name, add a word). Do NOT fall "
-        "back on generic filler like \"don't look away\"; if a line would be "
-        "generic, take one from the pool instead. Never reuse the same line "
-        "twice in one clip. Wrap each in the emotion bracket shown for its "
-        "register, inline where the mouth is free."
+        "PRIORITY ORDER for every spoken line:\n"
+        "  1. CONTEXT FIRST — dialogue must engage what is actually happening "
+        "and what the intent is about. If the intent names a subject, the "
+        "words are about THAT subject, concretely.\n"
+        "  2. The pools below define each register's VOICE — its rhythm, heat "
+        "and delivery. Use a pool line verbatim only when it genuinely fits "
+        "the exact moment; otherwise write a new line in the same voice that "
+        "speaks to the scene.\n"
+        "  3. Never paste pool lines back-to-back as filler — a line that "
+        "ignores the scene's subject is worse than silence. Never reuse the "
+        "same line twice in one clip.\n"
+        "Wrap each line in the emotion bracket shown for its register, inline "
+        "where the mouth is free."
     )
     if detected:
         names = ", ".join(REGISTERS[k]["name"] for k in active)
@@ -983,9 +1011,38 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
     else:
         out.append("No specific dialogue style requested — default palette below.")
 
+    topic = _speech_topic(intent)
+    if topic:
+        out.append(
+            f"\n━━ TOPIC LOCK ━━\nThe user named a speech subject: \"{topic}\". "
+            f"At least two out of every three spoken lines must be ABOUT "
+            f"{topic} — specific, concrete, on-subject sentences (opinions, "
+            f"observations, questions about it). Pool lines are seasoning "
+            f"between topical lines, never the main dialogue."
+        )
+        if not detected:
+            # Off-bank topic with only default registers: the pools can't
+            # cover the subject, so serve a small DELIVERY sample instead of
+            # drowning the topic in 30+ irrelevant lines.
+            out.append(
+                "The register samples below show DELIVERY only — tone, rhythm, "
+                "brackets. Do not copy their content; write your own lines "
+                f"about {topic} in that voice."
+            )
+            lines_per_register = min(lines_per_register, 4)
+
+    # Registers the user summoned BY NAME serve their full pool — "she speaks
+    # dirty" means dirty talk, not the PG variant of it.
+    _UNLOCK_ON_REQUEST = {"dirty_talk", "begging", "dominant", "submissive", "degradation"}
+    intent_lo = (intent or "").lower()
+
+    def _asked_for(reg_key):
+        return any(_trigger_hit(trig, intent_lo) for trig in REGISTERS[reg_key]["triggers"])
+
     for k in active:
         reg = REGISTERS[k]
-        pool = _pool_for(k, explicit, rng)[:lines_per_register]
+        unlock = explicit or (k in _UNLOCK_ON_REQUEST and _asked_for(k))
+        pool = _pool_for(k, unlock, rng)[:lines_per_register]
         brk = " / ".join(reg["brackets"][:3])
         out.append(f"\n【{reg['name']}】 voice: {reg['delivery']}")
         out.append(f"  brackets to use: ({brk})")
