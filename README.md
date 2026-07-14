@@ -1,3 +1,14 @@
+<img width="424" height="619" alt="Screenshot 2026-07-14 162333" src="https://github.com/user-attachments/assets/da24ea88-e997-4f65-870e-af52d22ad5be" />
+
+
+https://github.com/user-attachments/assets/901c891e-15da-4815-ac7a-7b4956558b8a
+
+
+
+
+
+
+
 # PromptForge LD
 
 Slimline LTX Video 2.3 prompt node. **His UI, your brain, less of everything.**
