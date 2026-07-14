@@ -1,3 +1,11 @@
+<img width="424" height="619" alt="image" src="https://github.com/user-attachments/assets/42a85a9d-5235-4163-a2d4-a9aed675b1e2" />
+<img width="437" height="254" alt="image" src="https://github.com/user-attachments/assets/c0db65a0-4934-4029-880e-6fc43f3b5d34" />
+
+Scroll your mouse wheel to change the lora strenghs. or click to add a number. 
+scroll to use the image carousel
+
+
+
 # ✦ PromptForgeLD
 
 A powerful ComfyUI node for cinematic **LTX-Video 2.3** prompt engineering and video generation. Built for creative professionals who need fine-grained control over character direction, environment, cinematography, and dialogue in AI video.
