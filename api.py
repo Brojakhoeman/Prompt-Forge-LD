@@ -236,6 +236,36 @@ def register_routes():
         _INPUT_FOLDER_OVERRIDE = path
         return web.json_response({"ok": True, "path": path})
 
+    @inst.routes.post("/pfld/upload_image")
+    async def upload_image(request):
+        """Save a browser-picked image into the current input folder so it
+        resolves like any other folder image at queue time."""
+        import base64
+        try:
+            body = await request.json()
+            name = os.path.basename((body.get("name") or "upload.png").strip()) or "upload.png"
+            data = (body.get("b64") or "").strip()
+            if "," in data:
+                data = data.split(",", 1)[1]
+            if not data:
+                return web.json_response({"ok": False, "error": "no image data"}, status=400)
+            if not is_image_filename(name):
+                name += ".png"
+            raw = base64.b64decode(data)
+            base = _input_dir()
+            os.makedirs(base, exist_ok=True)
+            stem, ext = os.path.splitext(name)
+            path = os.path.join(base, name)
+            i = 1
+            while os.path.exists(path):
+                path = os.path.join(base, f"{stem}_{i}{ext}")
+                i += 1
+            with open(path, "wb") as f:
+                f.write(raw)
+            return web.json_response({"ok": True, "name": os.path.basename(path)})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
     @inst.routes.get("/pfld/list_images")
     async def list_images(request):
         input_dir = _input_dir()
