@@ -1,5 +1,5 @@
 /**
- * Grok Prompt Lab — top toggles · hero canvas · prompt I/O
+ * PromptForge LD — top toggles · hero canvas · prompt I/O
  */
 import { app } from "../../scripts/app.js";
 import { buildResMaster, LTX_AR_PRESETS } from "./res_master.js";
@@ -210,7 +210,7 @@ app.registerExtension({
     <select id="gpl-music"></select>
   </div>
   <div class="gpl-inline">
-    <label>Energy <input type="range" id="gpl-int" min="1" max="10" value="5"><span class="val" id="gpl-int-val">5 · steady</span></label>
+    <label>Intensity <input type="range" id="gpl-int" min="1" max="10" value="5"><span class="val" id="gpl-int-val">5 · medium</span></label>
   </div>
 </div>
 
@@ -463,11 +463,20 @@ app.registerExtension({
       if (!node.size) return;
       const need = nodeNeeded();
       const dbgFloor = (_debugLayout && _debugLayout.floorMin != null) ? _debugLayout.floorMin : _FLOOR_MIN;
+      // The workflow-saved / user-dragged height is authoritative. Early
+      // measurements (before CSS + fonts settle) produce a spuriously large
+      // floor, and the grow-only logic below made that inflation permanent
+      // on every reload. Pin instead of growing.
+      if (node._savedH) {
+        if (Math.abs(node.size[1] - node._savedH) > 1) {
+          node.setSize([node.size[0], node._savedH]);
+        }
+        return;
+      }
       const hardMin = Math.max(need, dbgFloor);
       if (node.size[1] < hardMin) {
         node.setSize([node.size[0], hardMin]);
-      } else if (!dbgFloor && node.size[1] > need + 28 && !node._userResized) {
-        // only auto-shrink when no explicit debug floor is active
+      } else if (node.size[1] > need + 28 && !node._userResized) {
         node.setSize([node.size[0], need]);
       }
     }
@@ -517,6 +526,7 @@ app.registerExtension({
       const dbgF = (_debugLayout && _debugLayout.floorMin != null) ? _debugLayout.floorMin : 0;
       size[1] = Math.max(size[1], nodeNeeded(), dbgF);
       node._userResized = size[1] > nodeNeeded() + 28;
+      node._savedH = size[1]; // manual resize becomes the new sticky height
       fitContainer();
       resMaster?.resync?.();
       imageCarousel?.resync?.();
@@ -983,6 +993,7 @@ app.registerExtension({
           const targetH = Math.max(floorMin, base + Math.max(0, t) + Math.max(0, b));
           if (node.size[1] < targetH) {
             node.setSize([Math.max(node.size[0], LAYOUT.minNodeW || 580), targetH]);
+            node._savedH = targetH; // sliders set the new authoritative height
           }
           if (typeof fitContainer === 'function') fitContainer();
         }
@@ -1060,6 +1071,8 @@ app.registerExtension({
 
       _debugPad = null;
       _debugLayout = null;
+      node._savedH = null;      // release the height pin so layout can re-snap
+      node._userResized = false;
 
       LAYOUT.heroResBasis = 390;
       LAYOUT.heroStageW = 135;
@@ -1174,7 +1187,7 @@ app.registerExtension({
       tab.onclick = () => setVideoMode(tab.dataset.mode);
     });
     const intEl = $("#gpl-int");
-    const energyLabel = (v) => v <= 3 ? "slow" : v <= 6 ? "steady" : "fast";
+    const energyLabel = (v) => v <= 3 ? "low" : v <= 7 ? "medium" : "high";
     const syncInt = () => { const v = parseInt(intEl?.value, 10) || 5; if ($("#gpl-int-val")) $("#gpl-int-val").textContent = `${v} · ${energyLabel(v)}`; sw("intensity", v); };
     intEl?.addEventListener("input", syncInt);
     syncInt();
@@ -1423,7 +1436,10 @@ app.registerExtension({
     }
 
     $("#gpl-intent")?.addEventListener("input", () => sw("user_intent", $("#gpl-intent").value.trim()));
-    $("#gpl-out")?.addEventListener("input", () => { draftPrompt = $("#gpl-out").value; });
+    $("#gpl-out")?.addEventListener("input", () => {
+      draftPrompt = $("#gpl-out").value;
+      sw("confirmed_prompt", draftPrompt);
+    });
 
     function commitOutput(text) {
       const t = (text || "").trim();
@@ -1537,14 +1553,39 @@ app.registerExtension({
 
     $("#gpl-gen").onclick = compose;
 
-    const cp = gw("confirmed_prompt")?.value;
-    if (cp) { $("#gpl-out").value = cp; draftPrompt = cp; }
-    const ui = gw("user_intent")?.value;
-    if (ui) $("#gpl-intent").value = ui;
+    function restoreSession() {
+      const cp = gw("confirmed_prompt")?.value;
+      if (cp) { $("#gpl-out").value = cp; draftPrompt = cp; }
+      const ui = gw("user_intent")?.value;
+      if (ui) $("#gpl-intent").value = ui;
+      const vm = gw("video_mode")?.value;
+      if (vm) videoMode = vm;
+      const fn = (gw("image_filename")?.value || "").trim();
+      if (fn) imgFilename = fn;
+      setVideoMode(videoMode);
+      if (imgFilename && imgFilename !== NO_IMAGE_NAME) loadGalleryImage(imgFilename);
+      syncLive();
+    }
+    restoreSession();
 
-    setVideoMode(videoMode);
-    if (imgFilename && imgFilename !== NO_IMAGE_NAME) loadGalleryImage(imgFilename);
-    syncLive();
+    // nodeCreated runs BEFORE ComfyUI restores widgets_values from the saved
+    // workflow — hook onConfigure so the UI re-syncs after real values land.
+    const _origConfigure = node.onConfigure;
+    node.onConfigure = function (info) {
+      _origConfigure?.apply(this, arguments);
+      setTimeout(() => {
+        restoreSession();
+        // Honor the size saved in the workflow — stop auto-layout inflating it.
+        const s = (info && info.size) || node.size;
+        if (s && s[1] > 100) {
+          node._userW = Math.max(s[0], LAYOUT.minNodeW);
+          node._savedH = s[1];
+          node._userResized = true;
+          node.setSize([node._userW, s[1]]);
+        }
+        scheduleLayout();
+      }, 0);
+    };
 
     const tick = setInterval(() => {
       if (node._userW && node.size && node.size[0] < node._userW - 1) node.setSize([node._userW, node.size[1]]);

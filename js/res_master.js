@@ -1,5 +1,5 @@
 /**
- * Grok ResMaster — classic row layout or hero (image + bbox overlay).
+ * ResMaster LD — classic row layout or hero (image + bbox overlay).
  */
 const MP_UNIT = 1024 * 1024;
 

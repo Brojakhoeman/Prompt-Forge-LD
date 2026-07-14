@@ -414,10 +414,12 @@ app.registerExtension({
     // (the container is stretched to the widget, so scrollHeight feeds back and grows).
     const contentH = () => {
       const head = container.querySelector(".lfld-head");
-      const rows = container.querySelector(".lfld-rows");
       let h = 24; // root padding top+bottom
       if (head) h += head.offsetHeight + 8;   // + gap
-      if (rows) h += rows.scrollHeight;
+      // Sum row heights individually (offsetHeight ignores overflow), so the
+      // absolutely-positioned search dropdown can't inflate the measurement —
+      // rows.scrollHeight included the open menu and left a ghost gap behind.
+      container.querySelectorAll(".lfld-row").forEach((r) => { h += r.offsetHeight + 6; });
       return Math.max(120, h);
     };
     // What the node needs to show everything, once.
@@ -454,9 +456,43 @@ app.registerExtension({
 
     build();
     // One-time snap to content once the DOM has measured. Preserve user width.
+    // Skipped for nodes loaded from a workflow — onConfigure handles those and
+    // this snap used to stomp the saved size.
     setTimeout(() => {
+      if (node._lfldConfigured) return;
       node.setSize([Math.max(node.size?.[0] || 700, MIN_W), needed()]);
       node.setDirtyCanvas(true, true);
     }, 30);
+
+    // nodeCreated runs BEFORE ComfyUI restores properties/widgets_values from
+    // the saved workflow, so the UI built above only shows the default single
+    // row. Re-sync + rebuild once the real data lands ("+" no longer needed
+    // to make saved LoRAs appear).
+    const _origConfigure = node.onConfigure;
+    node.onConfigure = function (info) {
+      _origConfigure?.apply(this, arguments);
+      node._lfldConfigured = true;
+      setTimeout(() => {
+        const pickValid = (s) => {
+          if (typeof s !== "string" || !s.trim()) return "";
+          try { const a = JSON.parse(s); return Array.isArray(a) && a.length ? s : ""; }
+          catch { return ""; }
+        };
+        const w = node.widgets?.find((x) => x.name === "stack_data");
+        node.properties.stack_data =
+          pickValid(node.properties?.stack_data) ||
+          pickValid(w?.value) ||
+          JSON.stringify([{ on: true, lora: "None", str: 1.0, vs: 1.0, as: 1.0 }]);
+        if (w) w.value = node.properties.stack_data;
+        build();
+        // Keep the workflow-saved size; only grow if restored rows truly don't fit.
+        const savedW = Math.max(node.size?.[0] || MIN_W, MIN_W);
+        const savedH = node.size?.[1] || 0;
+        setTimeout(() => {
+          node.setSize([savedW, Math.max(savedH, needed())]);
+          node.setDirtyCanvas(true, true);
+        }, 20);
+      }, 0);
+    };
   },
 });
