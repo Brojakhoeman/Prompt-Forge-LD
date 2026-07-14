@@ -1248,6 +1248,27 @@ app.registerExtension({
       if (!file?.type?.startsWith("image/")) return;
       const r = new FileReader();
       r.onload = async () => {
+        // Save the ORIGINAL file into the input folder so the node can
+        // resolve it at queue time (image_b64 never serializes to Python).
+        let savedName = "";
+        try {
+          const resp = await fetch("/pfld/upload_image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: file.name || "upload.png", b64: r.result }),
+          });
+          const j = await resp.json();
+          if (j.ok && j.name) savedName = j.name;
+        } catch { /* offline — fall back to preview-only below */ }
+
+        if (savedName) {
+          await refreshGallery(true);
+          loadGalleryImage(savedName);
+          imageCarousel?.setFocus(savedName);
+          return;
+        }
+        // Fallback (upload route unreachable): preview-only, queue will
+        // fail for I2V but the LLM can still see the image.
         const img = new Image();
         img.onload = async () => {
           const preview = await downscaleDataUrl(r.result, 480);
@@ -1304,7 +1325,8 @@ app.registerExtension({
       if (imgPreviewUrl) return downscaleDataUrl(imgPreviewUrl, 1024);
       return "";
     }
-    async function refreshGallery() {
+    let _galleryKey = null;
+    async function refreshGallery(force = true) {
       try {
         const j = await (await fetch("/pfld/list_images?limit=40")).json();
         if (j.input_dir && $("#gpl-folder-path")) $("#gpl-folder-path").value = inputFolder || j.input_dir;
@@ -1319,10 +1341,21 @@ app.registerExtension({
           list = list.filter(n => n !== NO_IMAGE_NAME);
           list = [NO_IMAGE_NAME, ...list, NO_IMAGE_NAME];
         }
+        // Auto-poll calls with force=false: skip the rebuild when nothing
+        // changed, so the carousel never resets focus or churns the DOM.
+        const key = (j.input_dir || "") + "::" + list.join("|");
+        if (!force && key === _galleryKey) return;
+        _galleryKey = key;
         const current = imgFilename || (videoMode === "t2v" ? NO_IMAGE_NAME : "");
         imageCarousel?.setImages(list, current);
       } catch { /* gallery offline */ }
     }
+
+    // Watch the input folder — new/removed images appear without a manual refresh.
+    const galleryTick = setInterval(() => {
+      if (document.hidden) return;   // don't poll from background tabs
+      refreshGallery(false);
+    }, 5000);
 
     function mountRes() {
       if (resMaster) { try { resMaster.destroy(); } catch { /* */ } resMaster = null; }
@@ -1429,6 +1462,7 @@ app.registerExtension({
         onOpenFolder: pickFolder,
         onDropFile: loadFile,
         onSelect: (name) => loadGalleryImage(name),
+        onRefresh: () => refreshGallery(true),
       });
       applyRes(resMaster.getState().w, resMaster.getState().h, resScale);
       refreshGallery();
@@ -1596,6 +1630,7 @@ app.registerExtension({
     const origRemoved = node.onRemoved;
     node.onRemoved = function () {
       clearInterval(tick);
+      clearInterval(galleryTick);
       if (resMaster) try { resMaster.destroy(); } catch { /* */ }
       if (node._wSync) cancelAnimationFrame(node._wSync);
       if (origRemoved) origRemoved.apply(this, arguments);

@@ -19,6 +19,7 @@ export function buildImageCarousel(opts) {
   const onPickImage = o.onPickImage;
   const onOpenFolder = o.onOpenFolder;
   const onDropFile = o.onDropFile;
+  const onRefresh = o.onRefresh;
   const viewUrl = o.viewUrl || ((n) => n);
 
   let images = [];
@@ -36,14 +37,23 @@ export function buildImageCarousel(opts) {
   upload.innerHTML = `
     <span class="gpl-upload-plus">+</span>
     <span class="gpl-upload-lbl">Browse</span>
-    <button type="button" class="gpl-upload-folder" title="Set image folder">📁</button>`;
+    <button type="button" class="gpl-upload-folder" title="Set image folder">📁</button>
+    <button type="button" class="gpl-upload-refresh" title="Rescan folder">↻</button>`;
   upload.addEventListener("click", (e) => {
-    if (e.target.closest(".gpl-upload-folder")) return;
+    if (e.target.closest(".gpl-upload-folder") || e.target.closest(".gpl-upload-refresh")) return;
     onPickImage?.();
   });
   upload.querySelector(".gpl-upload-folder")?.addEventListener("click", (e) => {
     e.stopPropagation();
     onOpenFolder?.();
+  });
+  upload.querySelector(".gpl-upload-refresh")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.style.transition = "transform .45s ease";
+    btn.style.transform = "rotate(360deg)";
+    setTimeout(() => { btn.style.transition = "none"; btn.style.transform = "none"; }, 480);
+    try { await onRefresh?.(); } catch { /* offline */ }
   });
 
   const viewport = document.createElement("div");
