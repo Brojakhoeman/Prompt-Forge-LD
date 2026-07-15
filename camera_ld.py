@@ -12,6 +12,9 @@ MOVES = {
     "Tilt down": "the view tilts down",
     "Truck left": "the view trucks left alongside the scene",
     "Truck right": "the view trucks right alongside the scene",
+    "Orbit slow": "the view arcs slowly around the subject in a partial orbit",
+    "Low rise": "the view starts low and rises smoothly to eye level",
+    "Crane down": "the view descends from above in a smooth crane down",
     "Static hold": "the view stays locked off with no drift",
     "Handheld sway": "the view holds with subtle handheld sway",
 }

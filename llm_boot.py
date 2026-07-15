@@ -11,8 +11,24 @@ except ImportError:
 
 
 class ThinkFilter:
+    """Strip model reasoning blocks from streamed text.
+
+    Handles common wrappers:
+      <think>…</think>
+      <thinking>…</thinking>
+      <redacted_reasoning>…</redacted_reasoning>  (some servers)
+    """
+
+    # (open_tag, close_tag) — longest open first when scanning
+    _TAGS = (
+        ("<redacted_reasoning>", "</redacted_reasoning>"),
+        ("<thinking>", "</thinking>"),
+        ("<think>", "</think>"),
+    )
+
     def __init__(self):
         self.inside = False
+        self.close_tag = ""
         self.buf = ""
 
     def feed(self, chunk):
@@ -20,23 +36,33 @@ class ThinkFilter:
         out = []
         while True:
             if self.inside:
-                end = self.buf.find("</think>")
+                end = self.buf.find(self.close_tag)
                 if end == -1:
-                    self.buf = self.buf[-8:]
+                    # keep tail that might be a partial close tag
+                    keep = max(len(t[1]) for t in self._TAGS)
+                    self.buf = self.buf[-keep:]
                     break
-                self.buf = self.buf[end + 8:]
+                self.buf = self.buf[end + len(self.close_tag):]
                 self.inside = False
+                self.close_tag = ""
             else:
-                start = self.buf.find("<think>")
-                if start == -1:
-                    safe = len(self.buf) - 7
+                # find earliest open tag
+                best_i, best_open, best_close = None, None, None
+                for open_t, close_t in self._TAGS:
+                    i = self.buf.find(open_t)
+                    if i != -1 and (best_i is None or i < best_i):
+                        best_i, best_open, best_close = i, open_t, close_t
+                if best_i is None:
+                    keep = max(len(t[0]) for t in self._TAGS)
+                    safe = len(self.buf) - keep
                     if safe > 0:
                         out.append(self.buf[:safe])
                         self.buf = self.buf[safe:]
                     break
-                out.append(self.buf[:start])
-                self.buf = self.buf[start + 7:]
+                out.append(self.buf[:best_i])
+                self.buf = self.buf[best_i + len(best_open):]
                 self.inside = True
+                self.close_tag = best_close
         return "".join(out)
 
     def flush(self):

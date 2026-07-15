@@ -55,10 +55,11 @@ def _trigger_hit(trig, blob):
 #  GLOBAL AD-LIB POOL — generic vocalizations any register can borrow. Register
 #  specific ad-libs (below) are preferred; these fill in.
 # ─────────────────────────────────────────────────────────────────────────────
+# Prose forms only — asterisk stage-directions make LTX draw garbage / subtitles.
 _GLOBAL_ADLIBS = [
-    "*sharp inhale*", "*slow exhale*", "*soft hum*", "*quiet laugh*",
-    "*breath catches*", "*sigh*", "*gasp*", "*swallows*", "*bites lip*",
-    "*shaky breath*", "*low hum*", "*clears throat*",
+    "sharp inhale", "slow exhale", "soft hum", "quiet laugh",
+    "breath catches", "sigh", "gasp", "swallows", "bites lip",
+    "shaky breath", "low hum", "clears throat",
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,12 +87,22 @@ REGISTERS = {
             "you're shaking", "don't hide", "i see you", "come back to me",
             "just us", "no one else", "feel me", "closer, come on",
             "i missed this", "don't let go", "hold onto me",
+            "stay in this pocket of quiet",
+            "i like us here",
+            "no performance. just this.",
+            "your pulse is loud",
+            "let the world wait",
+            "forehead to mine"
         ],
         "explicit": [
             "i want all of you", "let me feel you", "give me this",
             "you're perfect like this", "don't stop touching me",
+            "slow and deep",
+            "i want to feel every inch",
+            "look at me while you're inside",
+            "don't rush the end"
         ],
-        "adlibs": ["*soft hum*", "*content sigh*", "*breath against skin*", "*quiet mmm*"],
+        "adlibs": ["soft hum", "content sigh", "breath against skin", "quiet mmm"],
         "triggers": ["soft", "intimate", "gentle", "tender", "loving", "romantic",
                      "close", "whisper softly", "sweet", "cuddl", "embrace", "caress"],
     },
@@ -110,14 +121,26 @@ REGISTERS = {
             "you're doing so well", "let everything melt", "sink into it",
             "nothing to worry about", "i've got you", "drift off",
             "feel how heavy you are", "let me guide you", "slow it down",
+            "ear only",
+            "softer",
+            "count with my breath",
+            "left side now",
+            "tingles on purpose",
+            "mic is jealous",
+            "hush. only this.",
+            "slow syllables for you"
         ],
         "explicit": [
             "good boy", "good girl", "you're doing so well",
             "let me hear you", "give it to me", "that's my good one",
             "let it all out for me", "so pretty when you let go",
+            "whisper filth only you hear",
+            "breath on the mic while i touch",
+            "quiet when you cum",
+            "describe it in a whisper"
         ],
-        "adlibs": ["*breath into mic*", "*soft sss*", "*gentle hum*", "*slow exhale*",
-                   "*mouth sounds*", "*tongue click*", "*whispered mm*"],
+        "adlibs": ["breath into mic", "soft sss", "gentle hum", "slow exhale",
+                   "mouth sounds", "tongue click", "whispered mm"],
         "triggers": ["asmr", "whisper", "breathy", "close mic", "close-mic",
                      "ear", "tingle", "relax", "trigger word", "roleplay whisper",
                      "soothe", "calming voice"],
@@ -135,6 +158,11 @@ REGISTERS = {
             "i've wanted this", "come get it", "all night", "again",
             "you drive me crazy", "i'm yours", "take what you want",
             "don't hold back", "closer, now", "i need more",
+            "i need it messy",
+            "don't be gentle",
+            "ruin my focus",
+            "talk while you do it",
+            "i want marks"
         ],
         "explicit": [
             "fuck me", "harder", "don't you dare stop", "i'm so wet",
@@ -146,9 +174,16 @@ REGISTERS = {
             "put it in", "i need it deeper", "you're so big",
             "cum for me", "use my mouth", "fuck me harder",
             "i want to taste you", "breed me", "take me",
+            "fuck the manners out of me",
+            "use that mouth",
+            "stretch me open",
+            "make it wet",
+            "i want it sloppy",
+            "spit and continue",
+            "leave me shaking"
         ],
-        "adlibs": ["*moan*", "*sharp gasp*", "*whimper*", "*breath hitches*",
-                   "*throaty moan*", "*bites down a sound*", "*ragged breath*"],
+        "adlibs": ["moan", "sharp gasp", "whimper", "breath hitches",
+                   "throaty moan", "bites down a sound", "ragged breath"],
         "triggers": ["dirty talk", "talks dirty", "talk dirty", "dirty",
                      "filthy", "talks filthy", "moans", "moaning", "horny",
                      "lustful", "in heat", "needy"],
@@ -166,6 +201,17 @@ REGISTERS = {
             "don't test me", "you'll wait", "watch your tone",
             "i won't ask twice", "still", "closer, i said",
             "keep those eyes on me", "hold it there", "patience",
+            "i don't ask twice",
+            "present yourself",
+            "inspection starts now",
+            "this is tuesday. get used to it.",
+            "chores aren't optional",
+            "key stays where i put it",
+            "i manage property. i don't negotiate.",
+            "eyes down until i say",
+            "earn speaking rights",
+            "you were shaped for this",
+            "silence is compliance"
         ],
         "explicit": [
             "open your mouth", "beg for it", "you take what i give you",
@@ -173,8 +219,15 @@ REGISTERS = {
             "say please", "who owns you", "take it all",
             "hands behind your back", "you'll earn it", "don't you dare cum",
             "spread", "hold still and take it", "ask permission",
+            "open. now.",
+            "you don't cum free",
+            "crawl to me",
+            "mouth open, eyes up",
+            "hole first. opinions never.",
+            "i decree. you obey.",
+            "petition, don't chat"
         ],
-        "adlibs": ["*low chuckle*", "*click of the tongue*", "*slow exhale*", "*amused hum*"],
+        "adlibs": ["low chuckle", "click of the tongue", "slow exhale", "amused hum"],
         "triggers": ["dominant", "domme", "dom ", "commanding", "orders",
                      "in charge", "controls", "strict", "mistress", "master",
                      "tells him", "tells her", "makes him", "makes her", "bossy",
@@ -193,6 +246,13 @@ REGISTERS = {
             "am i doing it right", "i'll do anything", "for you",
             "tell me what to do", "i want to be good", "yes, of course",
             "i understand", "i'll wait", "however you want me",
+            "yes, i understand",
+            "i'll wait as long as you want",
+            "show me how",
+            "i won't move",
+            "thank you for telling me",
+            "i can take the correction",
+            "please inspect me"
         ],
         "explicit": [
             "yes daddy", "please let me", "i'll be your good girl",
@@ -200,8 +260,14 @@ REGISTERS = {
             "i'll take it", "whatever you need", "please don't stop",
             "may i touch you", "i'm all yours", "please, i've been good",
             "i'll swallow", "use my mouth", "i need permission",
+            "please use my throat",
+            "i'll be your good hole",
+            "lock me if you want",
+            "i don't need a choice",
+            "make me earn it",
+            "i'll clean up after"
         ],
-        "adlibs": ["*small whimper*", "*shaky breath*", "*quiet gasp*", "*needy hum*"],
+        "adlibs": ["small whimper", "shaky breath", "quiet gasp", "needy hum"],
         "triggers": ["submissive", "sub ", "obeys", "yields", "begs",
                      "pleads", "good girl", "good boy", "desperate to please",
                      "eager", "obedient", "kneels", "servile"],
@@ -226,7 +292,7 @@ REGISTERS = {
             "i'm right there", "please don't stop don't stop",
             "may i cum", "i can't hold it any longer",
         ],
-        "adlibs": ["*desperate whine*", "*breath breaks*", "*choked moan*", "*frantic panting*"],
+        "adlibs": ["desperate whine", "breath breaks", "choked moan", "frantic panting"],
         "triggers": ["begs", "begging", "desperate", "pleading", "pleads",
                      "can't take it", "edge", "edging", "denied", "denial",
                      "overstimulat"],
@@ -244,14 +310,24 @@ REGISTERS = {
             "you're incredible", "that's my favourite", "well done",
             "you make it look easy", "proud of you", "exactly right",
             "you're a natural", "keep it up", "flawless",
+            "that's my favorite version of you",
+            "you listened. good.",
+            "exactly how i asked",
+            "keep that energy",
+            "you make obedience look easy",
+            "proud doesn't cover it"
         ],
         "explicit": [
             "good girl", "good boy", "that's my good girl",
             "you take it so well", "such a good little thing",
             "you were made for this", "perfect, don't stop",
             "you're so good at this", "look how well you take it",
+            "you take cock like you were built for it",
+            "pretty when you struggle",
+            "such a perfect mouth",
+            "that's how a good toy behaves"
         ],
-        "adlibs": ["*pleased hum*", "*approving mmm*", "*soft laugh*", "*warm sigh*"],
+        "adlibs": ["pleased hum", "approving mmm", "soft laugh", "warm sigh"],
         "triggers": ["praise", "encourag", "good girl", "good boy",
                      "tells her she's", "tells him he's", "reassur", "worship",
                      "compliment", "adores"],
@@ -268,6 +344,14 @@ REGISTERS = {
             "you're desperate", "such a mess", "how disappointing",
             "did you really think", "you're hopeless", "adorable, almost",
             "not even close", "you're all talk",
+            "you're replaceable",
+            "i designed this addiction",
+            "look at the gap between us",
+            "you walked into the trap",
+            "outmatched and outnumbered",
+            "funding both our vacations",
+            "purpose, not preference",
+            "already leaking for approval"
         ],
         "explicit": [
             "you filthy little slut", "beg for it, whore",
@@ -276,8 +360,15 @@ REGISTERS = {
             "you dirty thing", "know your place",
             "you're nothing but a hole", "pathetic little thing",
             "you love being used", "such a desperate slut",
+            "you exist to be used",
+            "nothing but a seat",
+            "toilet jokes write themselves",
+            "pathetic on purpose",
+            "know the ranking",
+            "you're the lesson, not the lover",
+            "earn air"
         ],
-        "adlibs": ["*cold laugh*", "*scoff*", "*derisive hum*", "*tsk*"],
+        "adlibs": ["cold laugh", "scoff", "derisive hum", "tsk"],
         "triggers": ["degrad", "humiliat", "mean", "cruel", "mocks",
                      "insults", "slut", "whore", "toy", "worthless", "pathetic",
                      "brat", "brags", "condescend", "belittl"],
@@ -295,14 +386,27 @@ REGISTERS = {
             "prove it", "you started this", "catch me then",
             "getting warmer", "not telling", "guess again",
             "you're cute when you try", "and if i don't?",
+            "is that your best offer",
+            "missed me?",
+            "slow clap",
+            "plot twist: i win",
+            "keep staring. i noticed.",
+            "you blinked first",
+            "new high score: my patience",
+            "don't make it weird. or do.",
+            "i'm bored. entertain me."
         ],
         "explicit": [
             "you want it that bad?", "beg a little", "ask me nicely",
             "you're already dripping", "look how hard you are",
             "cute, but not yet", "you'll have to earn it",
             "not until you ask", "keep begging",
+            "hard already? predictable.",
+            "show me without hands",
+            "i'll stop when it's funny",
+            "dare you to last"
         ],
-        "adlibs": ["*giggle*", "*playful hum*", "*stifled laugh*", "*sing-song mm*"],
+        "adlibs": ["giggle", "playful hum", "stifled laugh", "sing-song mm"],
         "triggers": ["playful", "teasing", "teases", "flirt", "smirk",
                      "grins", "bratty", "banter", "cheeky", "coy", "mischiev",
                      "winks"],
@@ -327,7 +431,7 @@ REGISTERS = {
             "i'll make it worth it", "take me to bed",
             "undress for me", "i want you now", "come and get it",
         ],
-        "adlibs": ["*low hum*", "*slow breath*", "*soft laugh*", "*inviting mmm*"],
+        "adlibs": ["low hum", "slow breath", "soft laugh", "inviting mmm"],
         "triggers": ["seduc", "sultry", "slow burn", "slow-burn", "smolder",
                      "smoulder", "come hither", "bedroom eyes", "temptress",
                      "alluring", "enticing"],
@@ -351,7 +455,7 @@ REGISTERS = {
             "hold on", "got it",
         ],
         "explicit": [],
-        "adlibs": ["*yawn*", "*chuckle*", "*hums along*", "*sniff*", "*clears throat*"],
+        "adlibs": ["yawn", "chuckle", "hums along", "sniff", "clears throat"],
         "triggers": ["casual", "everyday", "chatting", "hanging out", "normal",
                      "talking", "conversation", "chats", "small talk", "mundane"],
     },
@@ -369,7 +473,7 @@ REGISTERS = {
             "you found it okay?", "come in, come in",
         ],
         "explicit": [],
-        "adlibs": ["*warm laugh*", "*happy sigh*", "*bright hum*"],
+        "adlibs": ["warm laugh", "happy sigh", "bright hum"],
         "triggers": ["greet", "meeting", "arrives", "welcome", "reunion",
                      "sees them", "hello", "answers the door", "hug hello"],
     },
@@ -387,7 +491,7 @@ REGISTERS = {
             "text me the address", "i'll be there", "love you, bye",
         ],
         "explicit": [],
-        "adlibs": ["*listens*", "*hums in agreement*", "*sharp laugh*", "*sigh*"],
+        "adlibs": ["listens", "hums in agreement", "sharp laugh", "sigh"],
         "triggers": ["phone", "calls", "on the phone", "texting out loud",
                      "voicemail", "answers a call", "hangs up", "video call"],
     },
@@ -406,7 +510,7 @@ REGISTERS = {
             "you're allowed to be sad", "i understand",
         ],
         "explicit": [],
-        "adlibs": ["*soft shush*", "*gentle hum*", "*steadying breath*"],
+        "adlibs": ["soft shush", "gentle hum", "steadying breath"],
         "triggers": ["comfort", "consol", "cries", "crying", "upset", "grief",
                      "mourning", "reassur", "breaks down", "sobbing", "hurts",
                      "sad", "heartbroken"],
@@ -425,7 +529,7 @@ REGISTERS = {
             "best day ever", "come on, hurry", "this is huge",
         ],
         "explicit": [],
-        "adlibs": ["*delighted laugh*", "*squeal*", "*gasp of joy*", "*claps*"],
+        "adlibs": ["delighted laugh", "squeal", "gasp of joy", "claps"],
         "triggers": ["excited", "thrilled", "hyped", "celebrat", "win", "won",
                      "surprise party", "good news", "ecstatic", "overjoyed",
                      "can't wait"],
@@ -444,7 +548,7 @@ REGISTERS = {
             "i'm so tired of this",
         ],
         "explicit": [],
-        "adlibs": ["*heavy sigh*", "*groan*", "*scoff*", "*teeth suck*", "*eye-roll breath*"],
+        "adlibs": ["heavy sigh", "groan", "scoff", "teeth suck", "eye-roll breath"],
         "triggers": ["annoyed", "frustrat", "exasperat", "irritat", "fed up",
                      "eye roll", "sarcast", "bickering", "nagging", "tired of"],
     },
@@ -462,7 +566,7 @@ REGISTERS = {
             "you have no idea", "stay down",
         ],
         "explicit": [],
-        "adlibs": ["*sharp exhale*", "*low growl*", "*bitter laugh*", "*teeth grind*"],
+        "adlibs": ["sharp exhale", "low growl", "bitter laugh", "teeth grind"],
         "triggers": ["angry", "furious", "confront", "threat", "fight",
                      "argument", "shouts", "yells", "menacing", "villain",
                      "interrogat", "standoff", "warns"],
@@ -480,20 +584,284 @@ REGISTERS = {
             "no, no, back up", "careful now", "easy does it",
         ],
         "explicit": [],
-        "adlibs": ["*concentrated hum*", "*breath held*", "*muttered mm*", "*tongue click*"],
+        "adlibs": ["concentrated hum", "breath held", "muttered mm", "tongue click"],
         "triggers": ["focused", "working", "concentrat", "fixing", "building",
                      "crafting", "repair", "cooking", "studying", "solving",
                      "in the zone", "tinkering"],
     },
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  NICHE VOICES — salvaged from Category Playbook (short form) + curated
+    #  Only fire when intent/scenario hits their triggers (no token bloat).
+    # ══════════════════════════════════════════════════════════════════════
+
+    "findom": {
+        "name": "Findom / wallet control",
+        "delivery": "cool, transactional, amused — money is the point, not romance",
+        "brackets": ["cool", "matter-of-fact", "demanding", "amused", "bored-rich"],
+        "clean": [
+            "pay the tax first", "this bill is already overdue",
+            "empty that wallet now", "every cent goes to me",
+            "don't make me wait for my tribute", "this is just your entry fee",
+            "your money talks for you", "send it. now.",
+            "that's not a gift, that's rent", "you exist to fund this",
+            "i already spent it in my head", "the transfer needs to be instant",
+            "your balance is my moodboard", "prove it with numbers",
+            "i don't do free", "keep the receipt. for me.",
+        ],
+        "explicit": [
+            "pay to watch", "fund my body, not your fantasy",
+            "your cock doesn't pay bills. your wallet does.",
+            "unlock costs extra", "tribute or get ignored",
+            "that orgasm is prepaid only", "drain for access",
+            "you're an atm with a pulse", "send more or soft block",
+        ],
+        "adlibs": ["nail tap on phone", "soft scoff", "amused hum", "receipt crinkle"],
+        "triggers": ["findom", "fin dom", "tribute", "paypig", "cash", "wallet",
+                     "send money", "financial domination", "money slave", "atm",
+                     "paycheck", "sugar", "allowance", "drain"],
+    },
+
+    "joi_edge": {
+        "name": "JOI / edging / denial",
+        "delivery": "instructional, steady tempo, owns the countdown and the stop",
+        "brackets": ["instructional", "measured", "teasing-cruel", "calm control", "countdown"],
+        "clean": [
+            "stroke. slower.", "stop. hands off.", "edge for me",
+            "don't finish", "hold it", "again from the start",
+            "pace is mine", "not yet", "breathe through it",
+            "ten. stay with me.", "five. don't speed up.",
+            "three. dangerous now.", "one. hold.", "zero. give it.",
+            "i own these seconds", "wait for my number",
+            "eyes on me while you edge", "good. stop again.",
+        ],
+        "explicit": [
+            "don't you dare cum", "edge that cock for me",
+            "ruin it when i say", "hands off your cock. now.",
+            "stroke the tip only", "full grip. slow.",
+            "cum on zero, not before", "i decide when you empty",
+            "denied until i laugh", "leak if you want. finish if i allow.",
+            "count with me or lose it", "hold the edge until it hurts",
+        ],
+        "adlibs": ["slow countdown breath", "tongue click", "soft cruel laugh", "shush"],
+        "triggers": ["joi", "j.o.i", "jerk off instruction", "edging", "edge ",
+                     "orgasm denial", "denied", "denial", "countdown", "ruined orgasm",
+                     "hands free", "hfo", "stroke for me", "don't cum", "no cum"],
+    },
+
+    "body_worship": {
+        "name": "Body / goddess worship",
+        "delivery": "reverent but sharp — adoration as duty, not soft romance",
+        "brackets": ["reverent", "awed", "devotional", "hushed worship", "proud"],
+        "clean": [
+            "look at you", "every inch", "i could stare all day",
+            "don't cover up", "let me see", "you're unreal",
+            "stay right there", "perfect from here", "turn. slow.",
+            "i'm not worthy of that view", "say it again for me",
+            "your body is the whole point", "i came here for this",
+            "don't move. i need a second.", "holy",
+        ],
+        "explicit": [
+            "worship this", "on your knees for it",
+            "kiss here first", "trace it with your eyes",
+            "this temple isn't free", "adore it properly",
+            "you're not looking. you're worshipping.",
+            "my body is the altar", "earn a closer look",
+            "tell me what you'd do to it", "beg to touch",
+        ],
+        "adlibs": ["awe breath", "soft oh", "swallows", "reverent hum"],
+        "triggers": ["worship", "goddess", "body worship", "adore", "altar",
+                     "princess", "queen", "look at her body", "obsessed with her",
+                     "tit worship", "ass worship", "leg worship"],
+    },
+
+    "bondage": {
+        "name": "Bondage / restraint",
+        "delivery": "calm certainty — rope/cuffs as fact, struggle as entertainment",
+        "brackets": ["calm", "certain", "low threat", "patient", "amused"],
+        "clean": [
+            "you're not going anywhere", "test it. pull.",
+            "that knot stays", "still", "i own your range of motion",
+            "struggle if you need to", "tighter works on you",
+            "hands stay where i put them", "breathing is optional. escape isn't.",
+            "cargo now", "i decide when you move",
+            "feel that tension? mine.", "the more you pull, the worse it gets",
+        ],
+        "explicit": [
+            "bound and open", "you can't cover anything",
+            "rope remembers you", "helpless looks good on you",
+            "i'll use you like this", "can't close your legs. good.",
+            "tied for a reason", "struggle makes it hotter",
+            "you're fixed. i'm not.", "take it without hands",
+        ],
+        "adlibs": ["rope creak", "metal click", "slow exhale", "soft cruel chuckle"],
+        "triggers": ["bondage", "rope", "cuffs", "tied", "restrain", "shibari",
+                     "bound", "hogtie", "restraints", "harness", "collar and leash",
+                     "can't move", "struggling against"],
+    },
+
+    "facesitting": {
+        "name": "Facesitting / smother",
+        "delivery": "casual ownership — using a face like furniture, bored-hot",
+        "brackets": ["casual-cruel", "breathless-from-above", "dismissive", "hungry", "settled"],
+        "clean": [
+            "stay under me", "don't you dare move",
+            "this is your job", "breathe when i let you",
+            "good chair", "i'm comfortable now",
+            "hold still", "deeper", "that's it",
+            "i'm not getting up yet", "use your tongue",
+            "hands on my thighs", "look up if you can",
+        ],
+        "explicit": [
+            "sit on that face", "smother him", "bury me",
+            "you're furniture", "grind until i finish",
+            "my seat. your problem.", "choke on it nicely",
+            "i don't need to look at you", "face-fucking reverse",
+            "drown under me", "tongue. work.",
+        ],
+        "adlibs": ["settling sigh", "grind breath", "muffled struggle below", "pleased hum"],
+        "triggers": ["face sit", "facesit", "face-sitting", "sitting on his face",
+                     "sit on my face", "smother", "queening", "throne",
+                     "bury his face", "on his face"],
+    },
+
+    "cuckold": {
+        "name": "Cuckold / hotwife voice",
+        "delivery": "intimate cruelty — shares details to wound and arouse at once",
+        "brackets": ["intimate-cruel", "confessional", "mocking-soft", "matter-of-fact", "aroused-mean"],
+        "clean": [
+            "you bought this for him", "he's better", "watch",
+            "don't look away", "this is correction", "stay quiet",
+            "you're the audience", "i'm still thinking about him",
+            "compare if you want", "you know the ranking",
+            "cleanup is your job", "thank him when he's done",
+        ],
+        "explicit": [
+            "his cock reaches places yours never will",
+            "he made me cum. you never have.",
+            "i'm still wearing him", "taste your replacement",
+            "the cage stays on", "bull stays. you stay quiet.",
+            "raise his baby if i say so", "your mouth has a new job",
+            "i cum harder knowing you're locked", "you're not my lover. you're proof.",
+        ],
+        "adlibs": ["soft mean laugh", "kiss-smack at other man", "satisfied sigh", "tsk at husband"],
+        "triggers": ["cuck", "cuckold", "hotwife", "bull ", "the other man",
+                     "watching her with", "cleanup", "cuckquean", "another man",
+                     "better than you", "locks him"],
+    },
+
+    "pegging": {
+        "name": "Pegging / strap-on dominance",
+        "delivery": "confident instructor energy — owns the pace and the lesson",
+        "brackets": ["confident", "instructive", "pleased", "relentless", "warm-cruel"],
+        "clean": [
+            "relax for me", "breathe in", "that's it",
+            "take it slow", "i set the pace", "good",
+            "push back onto me", "hold still", "again",
+            "you're doing fine", "look at me while i do this",
+            "this is the lesson", "say thank you",
+        ],
+        "explicit": [
+            "take my strap", "open up", "deeper for me",
+            "your ass is learning", "cock is irrelevant right now",
+            "fuck yourself back onto it", "i own this hole",
+            "prostate's mine", "you cum from this or not at all",
+            "good boy. take more.", "watch me use you",
+        ],
+        "adlibs": ["strap creak", "pleased exhale", "rhythm grunt", "soft command hum"],
+        "triggers": ["pegging", "peg ", "strap-on", "strapon", "strap on",
+                     "she fucks him", "harness", "prostate", "his ass",
+                     "anal training", "strap-on pov"],
+    },
+
+    "giantess": {
+        "name": "Giantess / growth talk",
+        "delivery": "awed or gloating scale talk — size is the joke and the threat",
+        "brackets": ["awed", "gloating", "casual-huge", "exasperated", "playful-giant"],
+        "clean": [
+            "careful down there", "don't move", "you're tiny",
+            "i barely feel you", "watch the furniture",
+            "oops", "hold on", "i'm still growing",
+            "the ceiling's in my way", "look how small that is",
+            "stay on my palm", "i only had one snack",
+            "did the room get smaller?", "sorry about the roof",
+        ],
+        "explicit": [
+            "you fit in my hand", "don't fall off",
+            "i could crush you by accident", "worship up here",
+            "tiny cock. huge problem for you.", "climb if you can",
+            "i'll put you where i want", "size is the whole point",
+            "shrink in comparison", "one step and you're gone",
+        ],
+        "adlibs": ["building creak", "low giant laugh", "dust-fall breath", "surprised oh"],
+        "triggers": ["giantess", "giant ", "growth", "grwth", "grows huge",
+                     "macro", "tiny man", "size difference", "crushes",
+                     "towering", "building sized", "gets bigger"],
+    },
+
+    "sph": {
+        "name": "SPH / size mockery",
+        "delivery": "light to vicious size jokes — clinical amusement, never shouted",
+        "brackets": ["mocking", "clinical", "giggle-cruel", "disappointed", "amused"],
+        "clean": [
+            "is that all", "cute", "i almost missed it",
+            "try harder", "that's... ambitious", "oh.",
+            "i've seen bigger ideas", "bless your heart",
+            "don't apologize with that", "it tried",
+            "keep dreaming", "maybe next life", "adorable attempt",
+            "i need a microscope", "that's optimistic",
+            "were you saving the rest", "noted. unimpressed.",
+        ],
+        "explicit": [
+            "so small", "that won't reach", "pathetic little thing",
+            "my toy is bigger", "you fall out", "clit energy",
+            "put it away", "i need more than that",
+            "size isn't everything. lucky for you.", "micropenis joke writes itself",
+            "you brought a snack to a banquet", "i can't even feel it",
+            "half a handful if i'm generous", "don't poke. it tickles.",
+        ],
+        "adlibs": ["stifled laugh", "pity sigh", "giggle", "tsk"],
+        "triggers": ["sph", "small penis", "small dick", "tiny dick", "tiny cock",
+                     "micropenis", "size humiliation", "laughs at his size",
+                     "too small", "dicklet"],
+    },
+
+    "brat": {
+        "name": "Brat / pushback",
+        "delivery": "eye-roll energy, dare-you cadence, laughs at authority until it snaps",
+        "brackets": ["bratty", "eye-roll", "dare", "sing-song rude", "defiant-cute"],
+        "clean": [
+            "make me", "or what", "you sure about that",
+            "whatever", "as if", "not impressed",
+            "are you still talking", "like i care",
+            "try harder", "i forgot you were there",
+            "prove it", "and if i don't?", "oops. did it anyway.",
+            "you're not the boss of me", "catch me then",
+        ],
+        "explicit": [
+            "make me take it", "you wish you could stop me",
+            "i'll misbehave on purpose", "punish me then",
+            "not until you earn it, loser", "i do what i want with that cock",
+            "begging looks better on you", "i'm not the one on my knees",
+        ],
+        "adlibs": ["eye-roll sigh", "tongue out sound", "mock gasp", "giggle-dare"],
+        "triggers": ["brat", "bratty", "bratting", "mouthy", "sasses",
+                     "talks back", "defiant", "won't listen", "pushes back",
+                     "make me"],
+    },
+
 }
 
 
 # Activation priority when several match (more specific / more intense first).
 _PRIORITY = [
-    # adult, most specific first
+    # niche / adult specific first (playbook-salvaged voices)
+    "findom", "joi_edge", "facesitting", "pegging", "cuckold", "bondage",
+    "giantess", "sph", "brat", "body_worship",
+    # adult core
     "asmr", "degradation", "begging", "dominant", "submissive",
     "dirty_talk", "seductive", "praise", "playful",
-    # everyday, specific first
+    # everyday
     "phone_call", "comfort", "excited", "annoyed", "confrontation",
     "greeting", "focused", "casual",
     # gentle catch-alls last
@@ -505,7 +873,15 @@ _PRIORITY = [
 #  DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_registers(intent, scenario_block="", explicit_flag=False, max_active=3):
+# Hot registers only when the user clearly asked — prevents begging spam on soft scenes.
+_HOT_REGISTERS = frozenset({
+    "begging", "degradation", "dominant", "submissive", "dirty_talk", "asmr",
+    "findom", "joi_edge", "facesitting", "pegging", "cuckold", "bondage",
+    "sph", "brat", "body_worship", "giantess",
+})
+
+
+def detect_registers(intent, scenario_block="", explicit_flag=False, max_active=2):
     """Scan intent + scenario for register triggers. Returns register keys,
     most-relevant first, capped at max_active. Empty = no cue found (caller
     supplies a tier-appropriate default)."""
@@ -516,6 +892,18 @@ def detect_registers(intent, scenario_block="", explicit_flag=False, max_active=
             if _trigger_hit(trig, blob):
                 hits.append(key)
                 break
+    # Soft intents must not inherit hot registers from weak substring hits
+    # (e.g. "please" energy without begging words — we only keep hot if strong cue).
+    strong_hot = (
+        "beg", "plead", "desperat", "degrad", "humiliat", "dominat", "submiss",
+        "brat", "daddy", "dirty talk", "talks dirty", "asmr", "whisper asmr",
+        "findom", "tribute", "joi", "edging", "pegging", "strap-on", "cuck",
+        "facesit", "face sit", "bondage", "sph", "giantess", "growth", "grwth",
+        "worship", "goddess",
+    )
+    has_strong_hot = any(s in blob for s in strong_hot)
+    if not has_strong_hot:
+        hits = [h for h in hits if h not in _HOT_REGISTERS]
     return hits[:max_active]
 
 
@@ -613,14 +1001,18 @@ ACT_REGISTERS = {
         "giver_mouth": True,   # her mouth is full → sounds only (DURING the act)
         "receiver_mouth": False,
         "giver": [],           # occupied — see giver_adlibs
+        # Anticipation ONLY when the intent is ABOUT wanting oral (not mid-act).
+        # Prefer short — oral sequence itself allows ≤1–2 words for the giver total.
         "giver_anticipation": [
-            "i want your cock in my mouth", "let me taste you",
-            "i've been thinking about this", "let me suck it",
-            "i want to feel you on my tongue", "can i have it",
-            "i want you in my mouth", "let me take care of you",
-            "i've been so hungry for this", "put it in my mouth",
-            "i want to taste every inch", "let me worship it",
-            "i need you in my mouth", "i want to feel you throb on my tongue",
+            "let me", "please", "i want it", "mm… yes",
+            "can i", "mine", "now", "let me taste",
+            "let me ruin my lipstick",
+            "i want it messy",
+            "teach my throat",
+            "i'll take all of it"
+        ],
+        "giver_free_micro": [
+            "mm", "yeah", "more", "wait", "fuck", "yes",
         ],
         "receiver": [
             "just like that", "god, your mouth", "take it deeper",
@@ -628,11 +1020,25 @@ ACT_REGISTERS = {
             "you look so good", "fuck, yeah", "keep going",
             "use your tongue", "so fucking good", "that's it",
             "gag on it", "eyes on me", "swallow it", "good girl",
+            "lipstick looks good on that",
+            "throat. now.",
+            "vacuum seal. hold it.",
+            "eyes up while you choke",
+            "spit is fine. stopping isn't.",
+            "signature on the shaft",
+            "that's devotion, not pain",
+            "again. deeper.",
+            "good. messier.",
+            "don't hide the tears"
         ],
         "solo": [],
-        "giver_adlibs": ["*wet gagging*", "*muffled moan*", "*slurp*", "*choked breath*",
-                         "*hum around it*", "*gasp for air*", "*spit and suck*"],
-        "receiver_adlibs": ["*groan*", "*sharp inhale*", "*low moan*"],
+        "giver_adlibs": [
+            "wet gagging", "muffled moan", "slurp", "choked breath",
+            "hum around it", "hmm around the shaft", "gluk / throat wet sound",
+            "soft mm through the nose", "spit and suck", "wet suck rhythm",
+            "gag-and-recover breath (no words)", "throat flutter sound",
+        ],
+        "receiver_adlibs": ["groan", "sharp inhale", "low moan", "hiss of breath"],
     },
 
     "cunnilingus": {
@@ -649,10 +1055,19 @@ ACT_REGISTERS = {
             "i'm gonna cum", "keep going", "fuck, your tongue",
             "faster", "right there don't move", "i'm so close",
             "make me cum", "yes yes yes", "that's the spot",
+            "don't come up for air",
+            "flat tongue. press.",
+            "i'm using your face",
+            "stay buried",
+            "that's your whole job",
+            "finish me before you breathe"
         ],
         "solo": [],
-        "giver_adlibs": ["*muffled hum*", "*wet sounds*", "*groan against her*", "*slurp*"],
-        "receiver_adlibs": ["*sharp gasp*", "*rising moan*", "*thighs shake*", "*whimper*"],
+        "giver_adlibs": [
+            "muffled hum", "wet sounds", "groan against her", "slurp",
+            "hmm into her", "soft mm only — no words",
+        ],
+        "receiver_adlibs": ["sharp gasp", "rising moan", "thighs shake", "whimper"],
     },
 
     "penetration_giver": {
@@ -670,6 +1085,12 @@ ACT_REGISTERS = {
             "don't run", "give it to me", "who's is this",
             "say my name", "just like that", "harder?",
             "i'm not stopping", "you feel that",
+            "take the whole thing",
+            "don't run from it",
+            "this angle is mine",
+            "count the thrusts if you need",
+            "you're not going soft on me",
+            "open. wider."
         ],
         "receiver": [
             "harder", "don't stop", "right there", "deeper",
@@ -677,11 +1098,15 @@ ACT_REGISTERS = {
             "don't you dare stop", "i'm so full", "god, yes",
             "fuck, right there", "give it to me", "harder, please",
             "i'm gonna cum", "don't pull out", "ruin me",
+            "ruin that spot",
+            "pin me harder",
+            "i can take more",
+            "don't you dare finish first"
         ],
         "solo": [],
-        "giver_adlibs": ["*grunt*", "*low groan*", "*ragged breath*", "*hiss*"],
-        "receiver_adlibs": ["*moan on every thrust*", "*cry out*", "*whimper*",
-                            "*breath punched out*", "*gasp*"],
+        "giver_adlibs": ["grunt", "low groan", "ragged breath", "hiss"],
+        "receiver_adlibs": ["moan on every thrust", "cry out", "whimper",
+                            "breath punched out", "gasp"],
     },
 
     "riding": {
@@ -697,6 +1122,12 @@ ACT_REGISTERS = {
             "don't move", "i'm using you", "so deep like this",
             "watch me", "you're not going anywhere", "right there",
             "i control this", "moan for me",
+            "i'm the pace",
+            "hands off. i ride.",
+            "feel how deep i take you",
+            "you don't thrust. i do.",
+            "look at me use you",
+            "stay pinned under this"
         ],
         "receiver": [
             "fuck, ride me", "just like that", "you look incredible",
@@ -705,8 +1136,8 @@ ACT_REGISTERS = {
             "i'm gonna cum", "faster",
         ],
         "solo": [],
-        "giver_adlibs": ["*rhythmic moan*", "*breathless laugh*", "*gasp*", "*whine*"],
-        "receiver_adlibs": ["*groan*", "*grunt*", "*sharp inhale*"],
+        "giver_adlibs": ["rhythmic moan", "breathless laugh", "gasp", "whine"],
+        "receiver_adlibs": ["groan", "grunt", "sharp inhale"],
     },
 
     "handjob": {
@@ -721,6 +1152,12 @@ ACT_REGISTERS = {
             "give it to me", "you're close, aren't you", "just relax",
             "watch my hand", "make a mess", "there you go",
             "faster?", "let me feel you throb",
+            "watch my hand decide",
+            "tip only until i say",
+            "full grip. my tempo.",
+            "you're leaking on schedule",
+            "edge. don't you dare.",
+            "make a mess when i allow"
         ],
         "receiver": [
             "don't stop", "just like that", "tighter",
@@ -728,8 +1165,8 @@ ACT_REGISTERS = {
             "keep going", "right there", "i'm gonna cum",
         ],
         "solo": [],
-        "giver_adlibs": ["*soft laugh*", "*hum*", "*breath in his ear*"],
-        "receiver_adlibs": ["*groan*", "*sharp exhale*", "*grunt*"],
+        "giver_adlibs": ["soft laugh", "hum", "breath in his ear"],
+        "receiver_adlibs": ["groan", "sharp exhale", "grunt"],
     },
 
     "cum": {
@@ -752,15 +1189,24 @@ ACT_REGISTERS = {
             "cum inside", "i want it", "let go",
             "fill me up", "cum with me", "don't hold back",
             "all of it", "yes, cum", "breed me",
+            "on zero",
+            "empty for me",
+            "where i said",
+            "show me it's mine",
+            "don't waste a drop"
         ],
         "solo": [
             "i'm gonna cum", "oh god, i'm close", "i can't hold it",
             "right there, fuck", "i'm cumming", "oh fuck yes",
             "so close", "here it comes", "don't stop, almost",
+            "i'm allowed this",
+            "just me. finally.",
+            "hold... hold... now",
+            "messy on purpose"
         ],
-        "giver_adlibs": ["*long groan*", "*shuddering breath*", "*cry out*",
-                         "*breath breaks*", "*guttural moan*"],
-        "receiver_adlibs": ["*moan*", "*gasp*", "*whine*"],
+        "giver_adlibs": ["long groan", "shuddering breath", "cry out",
+                         "breath breaks", "guttural moan"],
+        "receiver_adlibs": ["moan", "gasp", "whine"],
     },
 
     "solo_play": {
@@ -785,11 +1231,18 @@ ACT_REGISTERS = {
             "i needed this", "god, yes", "don't stop, don't stop",
             "almost there", "i'm gonna cum", "just for me",
             "nobody but me", "so sensitive", "there, there, there",
+            "this is my pace",
+            "nobody rushes me",
+            "toy does what you can't",
+            "i named this one",
+            "watch me if you want. i won't stop.",
+            "almost. not yet.",
+            "i earn my own finish"
         ],
         "giver_adlibs": [],
         "receiver_adlibs": [],
-        "solo_adlibs": ["*soft moan to herself*", "*breath catches*", "*whimper*",
-                        "*sharp gasp*", "*trembling sigh*", "*quiet whine*"],
+        "solo_adlibs": ["soft moan to herself", "breath catches", "whimper",
+                        "sharp gasp", "trembling sigh", "quiet whine"],
     },
 
     "titfuck": {
@@ -802,14 +1255,19 @@ ACT_REGISTERS = {
             "you like them", "look how you slide", "cum on them",
             "watch yourself", "right between them", "make a mess on me",
             "you're so hard", "give it to me", "for me?",
+            "between them. stay.",
+            "look what you funded",
+            "make a mess on what you paid for",
+            "slide. slower.",
+            "these aren't free samples"
         ],
         "receiver": [
             "fuck, your tits", "just like that", "keep going",
             "so good", "i'm close", "don't stop",
         ],
         "solo": [],
-        "giver_adlibs": ["*soft laugh*", "*hum*", "*breath*"],
-        "receiver_adlibs": ["*groan*", "*grunt*"],
+        "giver_adlibs": ["soft laugh", "hum", "breath"],
+        "receiver_adlibs": ["groan", "grunt"],
     },
 }
 
@@ -884,8 +1342,14 @@ def render_act_block(intent, scenario_block, *, pov=False, pov_gender="female",
     out.append(
         "This scene has a specific act. Spoken lines and sounds MUST match the "
         "ROLE and MOUTH-STATE below. An occupied mouth (marked) NEVER forms "
-        "words — it only makes the listed sounds until it's free. Do not put a "
-        "partner-command in a solo scene, and do not make an occupied mouth talk."
+        "words — only wet sounds / hum / gag / gluk / moan until free. "
+        "Clear quoted dialogue while still sucking/kissing/sipping is a FAILURE. "
+        "ORAL / BLOWJOB giver across the whole oral sequence: at most 1–2 spoken words TOTAL "
+        "(optional free-mouth before engagement or after full pull-off) — not a stack of lines. "
+        "Mid-act = throat noises only (agreeing with mouth occupied: hmm, mm, gluk). "
+        "Never densify by packing giver lines into bobbing sections. "
+        "If the on-screen mouth is busy, free partner lines or POV voice-as-sound "
+        "(from just behind the view) carry the talk. No partner-command in a solo scene."
     )
     if anticipation:
         out.append(
@@ -965,15 +1429,16 @@ def _speech_topic(intent):
 
 def dialogue_block(*, tier="standard", intent="", scenario_block="",
                    explicit=False, seed=None, lines_per_register=12,
-                   use_adlibs=True, pov=False, pov_gender="female"):
+                   use_adlibs=True, pov=False, pov_gender="female",
+                   mouth_level=None, max_active=3):
     """Build the injected dialogue block.
 
     Returns "" for the silent tier. Otherwise returns a verbatim line bank for
     the activated mood registers, an ad-lib pool, and — when explicit AND a
-    specific act is detected — a role-split, mouth-aware ACT dialogue section
-    that adds the contextual oomph: the blowjob receiver talks while the giver's
-    full mouth only makes sounds; solo play is self-directed, never a
-    partner-command.
+    specific act is detected — a role-split, mouth-aware ACT dialogue section.
+
+    lines_per_register is generous by design — only activated registers inject,
+    so large pools never bloat unrelated scenes. Variety > short lists.
     """
     t = (tier or "standard").lower()
     if t in ("none", "silent", "off"):
@@ -981,29 +1446,49 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
 
     rng = random.Random(seed if seed is not None else random.randrange(1 << 30))
 
-    active = detect_registers(intent, scenario_block, explicit)
+    # Talkative / rich scenes can hold more registers without drowning
+    cap = max_active
+    if t in ("talkative", "chatty", "dense", "rich"):
+        cap = max(cap, 3)
+    active = detect_registers(intent, scenario_block, explicit, max_active=cap)
     detected = bool(active)
     if not active:
         active = _default_registers(t, explicit, intent, scenario_block)
+
+    # Mouth heat can bias which extra register samples we surface
+    ml = (mouth_level or "").lower().strip()
+    if ml == "asmr" and "asmr" not in active and "asmr" in REGISTERS:
+        active = ["asmr"] + [a for a in active if a != "asmr"]
+        active = active[:cap]
+    elif ml in ("intense", "aggressive") and explicit and "dirty_talk" not in active:
+        if any(x in f"{intent} {scenario_block}".lower() for x in ("fuck", "sex", "cock", "pussy", "dirty")):
+            active = list(active) + ["dirty_talk"]
+            active = active[: cap + 1]
 
     seen = set()
     active = [k for k in active if not (k in seen or seen.add(k))]
 
     out = ["\n━━ DIALOGUE BANK — VOICE GUIDE FOR THIS SCENE ━━"]
     out.append(
-        "PRIORITY ORDER for every spoken line:\n"
-        "  1. CONTEXT FIRST — dialogue must engage what is actually happening "
-        "and what the intent is about. If the intent names a subject, the "
-        "words are about THAT subject, concretely.\n"
-        "  2. The pools below define each register's VOICE — its rhythm, heat "
-        "and delivery. Use a pool line verbatim only when it genuinely fits "
-        "the exact moment; otherwise write a new line in the same voice that "
-        "speaks to the scene.\n"
-        "  3. Never paste pool lines back-to-back as filler — a line that "
-        "ignores the scene's subject is worse than silence. Never reuse the "
-        "same line twice in one clip.\n"
-        "Wrap each line in the emotion bracket shown for its register, inline "
-        "where the mouth is free."
+        "PRIORITY ORDER for every spoken line (non-negotiable):\n"
+        "  1. CONTEXT FIRST — invent lines about THIS scene. Name a prop, a place "
+        "fact, a stake, or the action happening now (the cup, the bus, the bar, "
+        "the phone, the next stop, the button, the rain). Empty stock flirt "
+        "(\"caught you looking\" / \"is that so\" / \"come and get it\" / "
+        "\"you wish\" / \"make me\") is a FAILURE unless the intent is literally that game.\n"
+        "  2. The pools below are VOICE samples only — rhythm, heat, delivery, "
+        "bracket flavour. Prefer writing a NEW line in that voice. Use a pool "
+        "line verbatim ONLY if it fits the exact moment and still names the scene.\n"
+        "  3. Never paste three pool lines in a row. Never reuse a line twice. "
+        "Never reuse the same 3+ word phrase across lines (no loops).\n"
+        "  4. VARIETY TAX: if two lines could swap without changing meaning, rewrite one.\n"
+        "  5. Do NOT default to pleading/begging/desperate delivery unless the intent "
+        "asks for it. Natural conversational heat is preferred.\n"
+        "  6. GROK EDGE: prefer the surprising concrete detail (bus number, sticky glass, "
+        "wrong wrench size, cracked phone) over generic heat words.\n"
+        "  7. NO META: never speak about cuts, cameras, scenes, clips, or the prompt.\n"
+        "A talking shot that ignores the intent's subject is worse than fewer lines.\n"
+        "Wrap each line in an emotion bracket, inline where the mouth is free."
     )
     if detected:
         names = ", ".join(REGISTERS[k]["name"] for k in active)
@@ -1033,7 +1518,7 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
 
     # Registers the user summoned BY NAME serve their full pool — "she speaks
     # dirty" means dirty talk, not the PG variant of it.
-    _UNLOCK_ON_REQUEST = {"dirty_talk", "begging", "dominant", "submissive", "degradation"}
+    _UNLOCK_ON_REQUEST = {"dirty_talk", "begging", "dominant", "submissive", "degradation", "findom", "joi_edge", "facesitting", "pegging", "cuckold", "bondage", "sph", "brat", "body_worship", "giantess"}
     intent_lo = (intent or "").lower()
 
     def _asked_for(reg_key):
@@ -1061,11 +1546,11 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
             if a not in seen2:
                 seen2.add(a); spread.append(a)
         spread = spread[:10]
-        out.append("\n【Ad-libs】 non-verbal vocal beats — drop these BETWEEN and "
-                   "AROUND spoken lines so the scene breathes (an occupied or busy "
-                   "mouth uses these instead of words). Place inline like a line, "
-                   "no emotion bracket needed:")
-        out.append("  " + "  ".join(spread))
+        out.append("\n【Ad-libs】 non-verbal vocal beats — weave these as PLAIN PROSE "
+                   "into the action line (never *stars*, never markdown). Example: "
+                   "\"she leans in, breath catches, and says (soft): …\". "
+                   "An occupied mouth uses these instead of words:")
+        out.append("  " + "  · ".join(spread))
 
     # Act-specific, role-split dialogue — EXPLICIT-GATED (all act lines are
     # explicit by nature). Fires when a sex act is detected in intent/scenario.
@@ -1086,3 +1571,11 @@ def explain(intent, scenario_block="", explicit=False, tier="standard"):
         "explicit": explicit,
         "tier": tier,
     }
+
+
+# ── Expand pools (only activated registers inject — size is free) ───────────
+try:
+    from .dialogue_boost_ld import apply as _boost_apply
+except ImportError:
+    from dialogue_boost_ld import apply as _boost_apply
+_boost_apply(REGISTERS, ACT_REGISTERS)

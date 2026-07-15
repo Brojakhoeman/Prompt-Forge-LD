@@ -103,9 +103,15 @@ def register_routes():
         if need_vision and mmproj_file == "None (text-only)" and llm.is_managed():
             return web.json_response({"error": "I2V needs mmproj for vision"}, status=400)
 
-        skip_flush = bool(body.get("skip_flush")) or os.environ.get("PFLD_TEST") == "1"
+        skip_flush = (
+            bool(body.get("skip_flush"))
+            or bool(body.get("keep_warm"))
+            or os.environ.get("PFLD_TEST") == "1"
+        )
+        keep_warm = bool(body.get("keep_warm")) or os.environ.get("PFLD_KEEP_WARM") == "1"
         body = dict(body)
         body["skip_flush"] = skip_flush
+        body["keep_warm"] = keep_warm
 
         resp = web.StreamResponse(
             headers={
@@ -132,13 +138,16 @@ def register_routes():
             except Exception:
                 pass
         finally:
-            # Same as PromptNodethingLD: free VRAM after every generate (success, error, abort).
-            try:
-                print(f"[PromptForgeLD] free: {llm.free()}")
-            except Exception:
-                pass
-            if not skip_flush:
-                flush_vram("PromptForgeLD")
+            # keep_warm: leave LLM resident for rapid refine / re-roll.
+            if not keep_warm:
+                try:
+                    print(f"[PromptForgeLD] free: {llm.free()}")
+                except Exception:
+                    pass
+                if not skip_flush:
+                    flush_vram("PromptForgeLD")
+            else:
+                print("[PromptForgeLD] keep_warm — LLM left loaded")
             try:
                 await resp.write_eof()
             except Exception:
@@ -271,7 +280,12 @@ def register_routes():
         input_dir = _input_dir()
         limit = min(80, max(1, int(request.rel_url.query.get("limit", "48"))))
         found = []
+        dir_mtime = 0
         if os.path.isdir(input_dir):
+            try:
+                dir_mtime = int(os.path.getmtime(input_dir))
+            except OSError:
+                dir_mtime = 0
             for root, _dirs, files in os.walk(input_dir):
                 for name in files:
                     ext = os.path.splitext(name)[1].lower()
@@ -285,10 +299,18 @@ def register_routes():
                         mtime = 0
                     found.append({"name": rel, "mtime": mtime})
         found.sort(key=lambda x: -x["mtime"])
+        # cache_key changes when folder or any image mtime changes → bust browser thumbs
+        top = found[:limit]
+        cache_key = f"{abs(hash(input_dir)) & 0xFFFFFFFF:x}-{dir_mtime}-{len(found)}"
+        if top:
+            cache_key += f"-{int(top[0]['mtime'])}"
         return web.json_response({
             "ok": True,
             "input_dir": input_dir,
-            "images": [x["name"] for x in found[:limit]],
+            "images": [x["name"] for x in top],
+            "mtimes": {x["name"]: int(x["mtime"]) for x in top},
+            "cache_key": cache_key,
+            "count": len(found),
         })
 
     @inst.routes.get("/pfld/image_info")
@@ -317,7 +339,8 @@ def register_routes():
         if pil is None:
             return web.json_response({"ok": False, "error": "decode failed"}, status=400)
         data = pil_jpeg_bytes(resize_pil(pil, max_side))
-        return web.Response(body=data, content_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
+        # Short cache: folder Apply/refresh busts with ?v=cache_key; avoid sticky stale thumbs
+        return web.Response(body=data, content_type="image/jpeg", headers={"Cache-Control": "public, max-age=30"})
 
     @inst.routes.get("/pfld/preview_b64")
     async def preview_b64(request):
@@ -407,9 +430,21 @@ def register_routes():
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
+    @inst.routes.get("/pfld/scenario_keys")
+    async def scenario_keys(request):
+        mode = (request.rel_url.query.get("mode") or "i2v").lower()
+        keys = scenarios_ld.keys_for_mode(mode)
+        return web.json_response({
+            "ok": True,
+            "mode": mode,
+            "keys": keys,
+            "label": "I2V scenarios" if mode == "i2v" else "T2V shot recipes",
+        })
+
     print(
         "[PromptForgeLD] routes: /pfld/generate_stream, /pfld/assemble_preview, /pfld/kill, "
         "/pfld/set_backend, /pfld/scan_models, /pfld/health, /pfld/list_images, "
         "/pfld/set_input_folder, /pfld/image_info, /pfld/thumb, /pfld/preview_b64, "
-        "/pfld/lora_keycounts, /pfld/lora_list, /pfld/get_scenario, /pfld/save_scenario"
+        "/pfld/lora_keycounts, /pfld/lora_list, /pfld/get_scenario, /pfld/save_scenario, "
+        "/pfld/scenario_keys"
     )

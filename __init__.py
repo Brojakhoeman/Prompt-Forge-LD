@@ -6,6 +6,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {**PF_NAMES, **LF_NAMES}
 
 WEB_DIRECTORY = "./js"
 
-print(f"[PromptForgeLD] loaded — {list(NODE_DISPLAY_NAME_MAPPINGS.values())}")
+print(f"[PromptForgeLD] v2 overhaul loaded — {list(NODE_DISPLAY_NAME_MAPPINGS.values())}")
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

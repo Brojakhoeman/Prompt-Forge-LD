@@ -1,12 +1,8 @@
 """
 music_ld.py — Music / Soundtrack presets for PromptForge LD
 
-Each entry provides rich, LTX-optimized description of how the music should feel,
-how it drives the performance, rhythm for stripping/dancing, singing style,
-and car-speaker vibe. These are injected as a dedicated block so the model
-can sync actions and vocals to the music properly.
-
-Format is similar to scenarios/environments for consistency.
+Rhythm, BPM, instrumentation, how motion lands on the beat.
+No vibe paint words (sensual/seductive/desire) — those fight THE CANON.
 """
 
 MUSIC_PRESETS = {
@@ -23,24 +19,24 @@ MUSIC_PRESETS = {
 
     "Hip-Hop / Rap — heavy 808s & crisp hi-hats": (
         "Modern hip-hop / trap — deep 808 bass hits, rapid crisp hi-hats, "
-        "130-145 BPM with a bouncy but menacing swing. The low end is physical; "
+        "130-145 BPM with a bouncy swing. The low end is physical; "
         "the body reacts to the sub frequencies with slow, heavy movement and chest pops on the kicks. "
-        "If the scene calls for vocals, the style is melodic and confident — half-sung hooks with "
-        "attitude. The mix is clean but bass-heavy enough to feel in the chest."
+        "If the scene calls for vocals, the style is melodic and confident — half-sung hooks. "
+        "The mix is clean but bass-heavy enough to feel in the chest."
     ),
 
     "Classical / Orchestral — sweeping strings & dramatic builds": (
         "Classical music swells through the scene — lush strings, powerful brass, dramatic dynamic "
-        "shifts, 60-90 BPM with long, emotional phrasing. The music has grandeur and tension/release; "
-        "motion is elegant and theatrical, big moves timed to the swells, stillness in the quiet bars. "
-        "If the scene calls for singing, the voice is classically pure — long notes, emotional vibrato. "
+        "shifts, 60-90 BPM with long phrasing. The music has tension and release; "
+        "motion is large and theatrical, big moves timed to the swells, stillness in the quiet bars. "
+        "If the scene calls for singing, the voice is pure — long notes, controlled vibrato. "
         "The sound is rich and room-filling, like a concert hall."
     ),
 
     "Electronic / EDM — pulsing synths & four-on-the-floor": (
         "EDM / techno pulses through the scene — four-on-the-floor kick at 128 BPM, "
-        "big supersaw synths, sidechained pads, euphoric builds and drops. "
-        "The beat is relentless and hypnotic; motion is rhythmic and precise, hitting every kick with "
+        "big supersaw synths, sidechained pads, builds and drops. "
+        "The beat is relentless; motion is rhythmic and precise, hitting every kick with "
         "hip movement and body waves, freezing on the drop's silence. If the scene calls for vocals, "
         "they are breathy, processed pop toplines cutting through the mix. The bass is strong enough "
         "to vibrate glass."
@@ -48,32 +44,31 @@ MUSIC_PRESETS = {
 
     "Mainstream Pop — catchy hooks & bright production": (
         "Upbeat pop — bright synths, punchy drums, catchy melodic hooks, "
-        "110-125 BPM, polished and radio-friendly. The groove is fun and playful; motion is "
-        "performative with teasing timing to the chorus, lots of eye contact with the view. "
-        "If the scene calls for singing, the vocals are bright and confident, like putting on a show. "
-        "The music feels like a summer night with the windows down."
+        "110-125 BPM, polished and radio-friendly. The groove is playful; motion is "
+        "performative with timing to the chorus, eyes toward the view on the hook. "
+        "If the scene calls for singing, the vocals are bright and confident. "
+        "The music feels like a night drive with the windows down."
     ),
 
-    "R&B / Soul — smooth grooves & sensual bass": (
+    "R&B / Soul — smooth grooves & warm bass": (
         "Smooth R&B / soul — warm electric piano, deep round bass, "
-        "laid-back drums at 80-95 BPM, intimate and seductive. The pocket is slow and heavy; "
+        "laid-back drums at 80-95 BPM, close and low. The pocket is slow and heavy; "
         "motion melts into the groove with body rolls and unhurried weight shifts. "
         "If the scene calls for singing, the voice is breathy and melismatic — runs and ad-libs. "
-        "The sound is close and personal, filling the space with warm low light and desire."
+        "The sound is close and personal, low light, chest-level warmth."
     ),
 
     "Heavy Metal — aggressive riffs & double-kick drums": (
         "Heavy metal roars through the scene — chugging palm-muted guitars, fast double-kick drums, "
         "140-170 BPM, aggressive and intense. The energy is raw and physical; motion is powerful and "
-        "precise — sharp moves, hair whips, actions timed to the riffs. If the scene calls for vocals, "
-        "they are screamed or growled with real metal attitude. The sound is distorted and loud enough "
-        "to feel in the chest."
+        "precise — sharp moves, hair swings, actions timed to the riffs. If the scene calls for vocals, "
+        "they are screamed or growled. The sound is distorted and loud enough to feel in the chest."
     ),
 
     "Country — twangy guitars & storytelling swing": (
         "Country music — acoustic and electric guitars with twang, "
         "steady train-beat drums, 100-120 BPM, warm and narrative. The feel is "
-        "earthy and a little outlaw; motion has an easy, playful swagger that rides the swing. "
+        "earthy; motion has an easy swagger that rides the swing. "
         "If the scene calls for singing, the voice is warm with a drawl, storytelling phrasing. "
         "The sound is honest and roadhouse-loud."
     ),
@@ -89,8 +84,21 @@ MUSIC_PRESETS = {
         "Reggae / dancehall — offbeat guitar skank, deep rolling bass, "
         "70-100 BPM (or double-time dancehall bounce), relaxed but insistent. Motion is loose-hipped "
         "and unhurried, winding with the riddim. If the scene calls for vocals, the delivery is "
-        "melodic patois-tinged toasting or smooth singjay. The bass is deep enough to move through "
-        "the floor."
+        "melodic toasting or smooth singjay. The bass is deep enough to move through the floor."
+    ),
+
+    "Ambient / Atmospheric — pads & slow pulse": (
+        "Ambient score — wide pads, soft low pulse at 60-80 BPM, sparse percussion. "
+        "Motion is slow and continuous; holds last longer; small gestures read large. "
+        "If the scene calls for vocals, they are quiet and close-miked. "
+        "The sound is spacious with long reverb tails."
+    ),
+
+    "Cinematic Trailer — brass hits & rising tension": (
+        "Trailer-style score — low brass hits, ticking percussion, rising strings, "
+        "70-100 BPM building into heavier drops. Motion lands on impacts; stillness between hits. "
+        "If the scene calls for vocals, they are sparse and spoken-word tight. "
+        "The sound is large, compressed, and room-filling."
     ),
 }
 
@@ -98,7 +106,7 @@ MUSIC_KEYS = list(MUSIC_PRESETS.keys())
 
 
 def music_block(key: str) -> str:
-    """Return the rich descriptive block for the selected music preset."""
+    """Return the descriptive block for the selected music preset."""
     if not key or key not in MUSIC_PRESETS or MUSIC_PRESETS[key] is None:
         return ""
     return MUSIC_PRESETS[key]

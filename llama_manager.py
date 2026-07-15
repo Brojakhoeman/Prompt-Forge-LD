@@ -22,10 +22,10 @@ import time
 import subprocess
 import urllib.request
 
-# Defaults — overridable per call.
-LLAMA_EXE     = r"C:\llama\llama-server.exe"
-MODELS_DIR    = r"C:\models"
-DEFAULT_URL   = "http://localhost:8080"
+# Defaults — env overrides first, then common Windows paths.
+LLAMA_EXE     = os.environ.get("PFLD_LLAMA_EXE") or os.environ.get("LLAMA_SERVER_EXE") or r"C:\llama\llama-server.exe"
+MODELS_DIR    = os.environ.get("PFLD_MODELS_DIR") or os.environ.get("LLAMA_MODELS_DIR") or r"C:\models"
+DEFAULT_URL   = os.environ.get("PFLD_SERVER_URL") or "http://localhost:8080"
 DEFAULT_PORT  = "8080"
 
 # ── single shared state ───────────────────────────────────────────────────────
@@ -71,6 +71,65 @@ def conn_backend():
 
 def conn_model():
     return CONN.get("remote_model") or "local"
+
+
+def detect_model_family(model_id=None) -> str:
+    """Coarse family for request tweaks: qwen | gemma | llama | mistral | other."""
+    m = (model_id if model_id is not None else conn_model()) or ""
+    m = str(m).lower().replace(" ", "").replace("_", "-")
+    if "qwen" in m:
+        return "qwen"
+    if "gemma" in m:
+        return "gemma"
+    if "llama" in m or "l3." in m or m.startswith("l3"):
+        return "llama"
+    if "mistral" in m or "mixtral" in m:
+        return "mistral"
+    return "other"
+
+
+def chat_request_extras(model_id=None) -> dict:
+    """Extra OpenAI-compatible fields for /v1/chat/completions by model family.
+
+    Qwen3.6 defaults thinking ON — that burns tokens and can pollute shot scripts.
+    We force enable_thinking=false for Qwen. Gemma/others: same kwargs are usually
+    ignored or accepted; callers may still fall back if the server returns 400.
+    """
+    family = detect_model_family(model_id)
+    extras = {}
+    if family == "qwen":
+        # Official Qwen3.6 path (LM Studio / llama.cpp --jinja)
+        extras["chat_template_kwargs"] = {
+            "enable_thinking": False,
+            "preserve_thinking": False,
+        }
+        # Some LM Studio builds also honor these aliases
+        extras["reasoning"] = False
+    elif family == "gemma":
+        # Harmless if unsupported; keeps parity with prior retry behavior
+        extras["chat_template_kwargs"] = {"enable_thinking": False}
+    return extras
+
+
+def chat_request_attempts(model_id=None) -> list:
+    """Ordered payload overlays to try (first preferred). Empty {} last = plain request."""
+    primary = chat_request_extras(model_id)
+    attempts = []
+    if primary:
+        attempts.append(primary)
+        # Minimal Qwen-only fallback if full extras 400
+        if detect_model_family(model_id) == "qwen":
+            attempts.append({"chat_template_kwargs": {"enable_thinking": False}})
+    attempts.append({})
+    # de-dupe while preserving order
+    seen, out = set(), []
+    for a in attempts:
+        key = _json.dumps(a, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(a)
+    return out
 
 
 def conn_models_dir():
@@ -251,6 +310,9 @@ def chat(messages, *, temperature=0.8, max_tokens=1024, seed=None,
     }
     if not is_managed():
         payload["ttl"] = IDLE_TTL          # auto-unload after we go quiet
+    # Model-family tweaks (e.g. Qwen thinking off) unless caller overrides
+    for k, v in chat_request_extras().items():
+        payload.setdefault(k, v)
     if extra:
         payload.update(extra)
     data = _json.dumps(payload).encode("utf-8")

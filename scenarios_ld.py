@@ -1,297 +1,1113 @@
 """
-scenarios_ld.py — Scenario / position presets for PromptNodethingLD (Smart Encoder LD)
-=====================================================================================
-Works exactly like environments_ld.py and the camera_angle dropdown: a BACKGROUND
-ACTIVATION LAYER. The user picks a scenario, and its choreography hint is injected
-ON TOP of whatever they typed in the prompt box — even if they described roughly the
-same thing, the scenario "activates" the position so the LLM renders that specific
-choreography reliably instead of hoping to infer it.
+scenarios_ld.py — I2V scenarios vs T2V shot recipes for PromptForge LD
+===========================================================================
+Two lanes (filtered by video mode in the UI):
+  • I2V — honour the start frame; JUMP cuts; micro-motion; no restage fights
+  • T2V — deep SHOT RECIPES (stakes, section plan, dialogue shape, cast hints)
 
-Mental model:  environment + scenario + user input + sliders = prompt
-
-Each scenario is a tuple:
-    (tag, setup, choreography)
-      tag          — "SFW" or "NSFW" (drives nothing on its own here; the scene-content
-                     detector still resolves explicit/clean. The tag is a label + an
-                     optional signal the node can read.)
-      setup        — one plain sentence establishing the position/starting arrangement
-      choreography — the movement grammar that makes the position render: continuous,
-                     finite verbs, one action per clause, physical order. 
-                     MUST be explicit about facing direction relative to the man and camera.
-                     When turning/looking back: ALWAYS rotates torso + head together (never head/neck only).
-                     If facing away: back/hips to him, front to camera. Never assume the model will infer torso movement.
-
-Sentinels:
-    None      → no scenario (LLM / user's prompt decides)
-    "RANDOM"  → seed picks one at runtime
-
-The hint is injected as an additive block; the user's own words always take priority
-for identity, wardrobe, and specifics. The scenario only supplies the ARRANGEMENT and
-the MOTION so a blank or vague box still yields a well-choreographed clip.
+Storage: each entry is a dict with at least tag/setup/choreography/modes.
+Legacy 3-tuples are accepted by the normalizer for hot-edit compatibility.
 """
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+import importlib
+
+
+def _modes_tuple(modes):
+    if not modes:
+        return ("i2v", "t2v")
+    if isinstance(modes, str):
+        modes = (modes,)
+    out = []
+    for m in modes:
+        m = (m or "").lower().strip()
+        if m in ("i2v", "t2v") and m not in out:
+            out.append(m)
+    return tuple(out) or ("i2v", "t2v")
+
+
+def normalize_scenario(val):
+    """tuple/dict/sentinel → dict | None | \"RANDOM\"."""
+    if val is None or val == "RANDOM":
+        return val
+    if isinstance(val, dict):
+        d = dict(val)
+        tag = d.get("tag") or "SFW"
+        d["tag"] = "RECIPE" if str(tag).upper() == "RECIPE" else str(tag).upper()
+        d["setup"] = d.get("setup") or ""
+        d["choreography"] = d.get("choreography") or d.get("choreo") or ""
+        d["modes"] = _modes_tuple(d.get("modes") or ("i2v", "t2v"))
+        return d
+    if isinstance(val, (tuple, list)) and len(val) >= 3:
+        tag, setup, choreo = val[0], val[1], val[2]
+        modes = val[3] if len(val) > 3 else None
+        extra = val[4] if len(val) > 4 and isinstance(val[4], dict) else {}
+        d = {"tag": tag, "setup": setup, "choreography": choreo, **extra}
+        if modes is not None:
+            d["modes"] = _modes_tuple(modes)
+        elif str(tag).upper() == "JUMP":
+            d["modes"] = ("i2v",)
+        else:
+            d["modes"] = ("i2v", "t2v")
+        d["tag"] = "RECIPE" if str(tag).upper() == "RECIPE" else str(tag).upper()
+        return d
+    return None
+
 
 SCENARIO_PRESETS = {
     "None — user's prompt decides": None,
-    '🎲 Random — seed picks': "RANDOM",
-    '🚶 Walk in and stop': ('SFW', 'A person walks into the space and comes to a stop.',
-        'She walks forward into the room at a steady pace, then stops in the center and stands still, her weight settling on both feet.'),
-    '🪑 Sit down on a chair': ('SFW', 'A person crosses to a chair and sits.',
-        'She steps to the chair, turns to face out, and lowers herself down into the seat in one smooth motion.'),
-    '🧍 Stand up from a chair': ('SFW', 'A person rises from a seated position.',
-        'She pushes down on the armrests and rises smoothly to her feet, straightening as she stands.'),
-    '🚪 Enter through a door': ('SFW', 'A person opens a door and comes through it.',
-        'She pushes the door open and steps through into the room in one smooth motion.'),
-    '🤚 Reach for something on a shelf': ('SFW', 'A person reaches up for an object on a high shelf.',
-        'She reaches one arm up toward the high shelf and closes her hand around the object.'),
-    '🧎 Kneel to pick something up': ('SFW', 'A person kneels to retrieve something from the floor.',
-        'She bends her knees and lowers straight down into a kneel, reaching one hand to the floor.'),
-    '🌆 Lean on a railing, looking out': ('SFW', 'A person leans on a railing and gazes out.',
-        'She rests both forearms on the railing and leans her weight forward, gazing out ahead.'),
-    '🪜 Climb stairs': ('SFW', 'A person climbs a flight of stairs.',
-        'She climbs the stairs at a steady pace, one hand trailing along the banister.'),
-    '🔄 Turn around to look behind': ('SFW', 'A person turns to look over their shoulder.',
-        'She pivots her upper body at the waist, rotating her torso and head together as one unit to look back over her shoulder while her hips stay facing forward.'),
-    '🛏 Lie down to rest': ('SFW', 'A person lies down on a bed to rest.',
-        'She sits on the edge of the bed, then lies back and settles onto the mattress.'),
-    '🧥 Put on a jacket': ('SFW', 'A person puts on a jacket.',
-        'She slides one arm then the other into the jacket sleeves and pulls it up onto her shoulders.'),
-    '☕ Sip a drink by a window': ('SFW', 'A person stands by a window with a drink.',
-        'She raises the cup to her lips and takes a slow sip, then lowers it, gazing out the window.'),
-    '💃 Dance slowly on the spot': ('SFW', 'A person sways in a slow solo dance.',
-        'She sways her hips slowly from side to side, letting her arms drift up with the motion.'),
-    '🤗 Walk up and hug': ('SFW', 'One person walks up to another and hugs them.',
-        'She walks up to him, wraps both arms around him, and presses into a close hug.'),
-    '🪞 Fix hair in a mirror': ('SFW', 'A person adjusts their hair in front of a mirror.',
-        'She lifts both hands to her hair and smooths it back, watching herself in the mirror.'),
-    '🛋 Flop onto a couch': ('SFW', 'A person drops down onto a couch.',
-        'She turns and lets herself fall back onto the couch, settling into the cushions.'),
-    '🚗 Lean against a car': ('SFW', 'A person leans back against the side of a car.',
-        'She leans back against the side of the car and rests her weight against it, folding her arms.'),
-    '📖 Read, curled up': ('SFW', 'A person is curled up reading.',
-        'She sits curled in the chair holding a book, turning a page slowly.'),
-    '😏 Bite lip and look over shoulder': ('SFW', 'A person glances back with a suggestive look.',
-        'She rotates her torso and head together at the waist to look back over her shoulder toward the camera, catching her lower lip between her teeth while her hips remain facing away.'),
-    '👗 Slow twirl in a dress': ('SFW', 'A person turns slowly to show a dress, pivoting on the spot.',
-        'She stands facing the camera and turns slowly in a full 360-degree circle on the spot. Her torso leads the rotation, followed by her shoulders and head, the dress flaring out. She completes the turn and faces the camera again.'),
-    '💋 Blow a kiss to camera': ('SFW', 'A person blows a kiss.',
-        'She lifts her fingertips to her lips, then sweeps her hand out toward the camera in a slow blown kiss.'),
-    '🛏 Stretch on a bed': ('SFW', 'A person stretches languidly on a bed.',
-        'She reaches both arms up above her head and arches her back off the mattress in a slow stretch.'),
-    '🍑 Walk away, glance back': ('SFW', 'A person walks away and glances back over the shoulder.',
-        'She walks slowly away from the camera with her back fully to it. She then stops, rotates her torso and head together at the waist to look back over her shoulder at the camera while her feet and hips stay pointed away.'),
-    '🧎 Kneel up and arch': ('SFW', 'A person kneels up and arches slightly.',
-        'She rises up onto her knees and arches gently back, her hands sliding up her thighs.'),
-    '💦 Lean back under water': ('SFW', 'A person leans back into water, hair slicking back.',
-        'She tips her head back into the water, then lifts back up, water sheeting down her face and shoulders.'),
-    '🫂 Bent-over hug over his lap': ('NSFW', 'A woman leans over a seated man to hug him, bending at the waist (torso down, facing away from him).',
-        'She bends forward at the waist over his lap, lowering her upper body toward his legs while keeping her back straight. She wraps her arms around his neck or shoulders and holds the bent-over position.'),
-    '💺 Sitting between his legs': ('NSFW', "A woman lowers herself to sit between a seated man's legs, Facing away from him, towards the camera.", "She steps between his spread legs, She turns away from him to look at the camera, and lowers her body to sit between his legs, with her back resting against his chest. she moves her hips in rhythmic circles as she sits on him."),
-    '🪑 Lap sitting, facing him': ('NSFW', "A woman settles onto a seated man's lap, facing him directly (chest to chest).",
-        'She steps over his thighs, turns to face him, and lowers her body to sit on his lap with her knees on either side of his hips and her arms resting over his shoulders.'),
-    '🔃 Grinding on his lap': ('NSFW', "A woman grinds slowly while seated on a man's lap, facing him.", "Seated on his lap  both of her legs between his legs.  facing him, she keeps her upper body upright and moves her hips forward and back in a slow, steady motion."),
-    '🧍 Pressed against a wall': ('NSFW', 'Two people pressed together against a wall.',
-        'He moves her back against the wall and leans his body into hers as she lifts one leg to wrap around his hip.'),
-    '🛏 Lying together, one behind': ('NSFW', 'Two people lie together, one curled behind the other.',
-        'She lies on her side facing forward. He moves directly behind her and aligns his body with hers, chest to her back.'),
-    '🔥 Missionary': ('NSFW', 'Explicit sex — missionary, penetration visible. She is on her back facing up toward him (facing the camera).',
-        'She lies on her back facing up toward him, knees bent and open. He positions between her legs and drives his cock into her pussy in a steady rhythm.'),
-    '🔥 Doggy': ('NSFW', 'Explicit sex — doggy from behind, penetration visible. She is on all fours facing away from him (facing the camera).',
-        'She is on all fours facing away from him, her back to his chest and her face toward the camera. He grips her hips and drives his cock into her pussy from behind in a steady rhythm.'),
-    '🔥 Cowgirl': ('NSFW', 'Explicit sex — cowgirl, her riding on top facing him (chest to chest).',
-        'She straddles him facing him, lowers her pussy onto his cock, and rides in a rolling rhythm with her torso upright and facing his chest, her hands on his shoulders or chest.'),
-    '🔥 Reverse cowgirl': ('NSFW', 'Explicit sex — reverse cowgirl, her riding facing away from him (back to his chest, facing the camera).',
-        'She straddles him facing away from him, lowers her pussy onto his cock, and rides with her back to his chest. Her torso faces forward toward the camera while her hips roll and her ass rises and drops.'),
-    '🔥 Spooning': ('NSFW', 'Explicit sex — side-lying, penetration from behind. She is facing the same direction as him (both facing camera or away together).',
-        'She lies on her side facing forward, and he settles directly behind her. He pushes his cock into her pussy from behind while they stay spooned, his chest against her back.'),
-    '🔥 Against the wall, standing': ('NSFW', 'Explicit sex — standing against a wall, penetration. She is facing him, back pressed to the wall.',
-        'He presses her back flat against the wall so she is facing him directly. She wraps her legs around his waist and he drives his cock up into her pussy while holding her pinned to the wall.'),
-    '🔥 Bent over a surface': ('NSFW', 'Explicit sex — bent over a surface, taken from behind. Her torso is down, ass up, facing away from him (toward the camera if applicable).',
-        'She bends at the waist over the surface, torso lowered and ass raised, facing away from him. He grips her hips and drives his cock into her pussy from behind in a steady rhythm.'),
-    '🔥 Mating press': ('NSFW', 'Explicit sex — mating press, deep penetration from above. She is on her back facing up toward him (facing the camera).',
-        'She lies on her back facing up, knees pulled back toward her shoulders and feet in the air. He folds over her and drives his cock straight down into her pussy from above, pinning her legs back.'),
-    '🔥 Oral (giving)': ('NSFW', 'Explicit — blowjob, sucking cock. She is kneeling in front of him, facing him.',
-        'She kneels facing him, lowers her mouth over his cock, and bobs her head up and down in a steady rhythm while looking up at him.'),
-    '🔥 Oral (receiving)': ('NSFW', 'Explicit — eating pussy, oral on her. She is on her back facing up (toward the camera), legs open.',
-        'She lies on her back facing upward, thighs spread wide. He lies between her legs and licks her pussy in a steady rhythm while she presses her hips up toward his mouth.'),
-    '🔥 Face sitting': ('NSFW', 'Explicit — sitting on his face, oral. She is facing his feet or the camera (specify facing).',
-        'She lowers herself onto his face, straddling his head with her pussy directly over his mouth. She faces forward (toward his feet or camera) and grinds her hips in a slow circle against his tongue.'),
-    '🔥 Standing oral': ('NSFW', 'Explicit — kneeling blowjob.',
-        'She kneels in front of him and takes his cock into her mouth, sucking in a steady bobbing rhythm.'),
-    '🔥 69': ('NSFW', 'Explicit — 69, mutual oral.',
-        'She settles over him head to toe, taking his cock into her mouth while he licks her pussy, both rocking together.'),
-    '🌸 Tribbing (F/F)': ('NSFW', 'Explicit F/F — tribbing, pussies grinding.',
-        "One woman grinds her pussy down against the other's, the two rocking together in a building rhythm."),
-    '🌸 Scissoring (F/F)': ('NSFW', 'Explicit F/F — scissoring, pussies grinding.',
-        'They interlock their legs and grind their pussies together in a steady rocking rhythm.'),
-    '🌸 Mutual oral (F/F)': ('NSFW', 'Explicit F/F — 69, mutual oral.',
-        "They settle head to toe and each licks the other's pussy, both grinding down and rocking together."),
-    '🌸 Fingering (F/F)': ('NSFW', 'Explicit F/F — fingering.',
-        "She slides her fingers into her partner's pussy and works them in a steady rhythm as her partner's hips press up."),
-    '🍑 Spooning (anal)': ('NSFW', 'Explicit anal — side-lying, penetration from behind. She is facing the same direction as him.',
-        'She lies on her side facing forward, and he settles directly behind her. He pushes his cock into her ass from behind while they stay spooned, his chest against her back.'),
-    '🍑 Doggy (anal)': ('NSFW', 'Explicit anal — doggy, penetration from behind. She is on all fours facing away from him (facing the camera).',
-        'She is on all fours facing away from him, back to his chest. He grips her hips and drives his cock into her ass from behind in a steady rhythm.'),
-    '🍑 Reverse cowgirl (anal)': ('NSFW', 'Explicit anal — reverse cowgirl, riding facing away from him (back to his chest, facing the camera).',
-        'She straddles him facing away from him, lowers her ass onto his cock, and rides with her back to his chest. Her torso faces forward toward the camera while her hips move.'),
+    "🎲 Random — seed picks": "RANDOM",
+    '🚶 Walk in and stop': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'A person walks into the space and stops.',
+        "choreography": 'She walks forward at a steady pace, stops centre-frame, weight settles on both feet, and faces the camera.',
+    },
+    '🚪 Enter through a door': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'A person opens a door and steps through.',
+        "choreography": 'She pushes the door open, steps through in one motion, then turns her torso and head together to face into the room.',
+    },
+    '🪑 Sit down on a chair': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'A person sits on a chair.',
+        "choreography": 'She steps to the chair, turns to face out, and lowers into the seat in one smooth motion.',
+    },
+    '🧍 Stand up from a chair': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'A person rises from a chair.',
+        "choreography": 'She pushes on the armrests or thighs and rises to her feet, straightening as she stands.',
+    },
+    '🔄 Turn to look back': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'A person looks back over the shoulder.',
+        "choreography": 'She rotates torso and head together at the waist to look back over her shoulder; hips stay mostly forward unless the beat needs a full turn.',
+    },
+    '💃 Dance on the spot': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Solo dance / sway.',
+        "choreography": 'She sways hips side to side, arms drift with the beat, weight shifts foot to foot, facing the camera.',
+    },
+    '🤗 Walk up and hug': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'One person hugs another.',
+        "choreography": 'She walks up to him, wraps both arms around him, and presses into a close hug; both faces stay readable or one cheek to shoulder.',
+    },
+    '💋 Blow a kiss to camera': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Blow a kiss.',
+        "choreography": 'She lifts fingertips to her lips, then sweeps her hand out toward the camera in a slow blown kiss.',
+    },
+    '🍑 Walk away, glance back': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Walk away, look back.',
+        "choreography": 'She walks away back-to-camera, stops, rotates torso and head together to look back over her shoulder at the camera while feet stay pointed away.',
+    },
+    '☕ Sip a drink': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Sip a drink.',
+        "choreography": 'She raises a cup or glass to her lips, takes a slow sip, lowers it, eyes toward camera or out a window.',
+    },
+    '🎤 Talk to camera / monologue': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Address the camera with spoken lines.',
+        "choreography": 'She faces the camera, hands gesture lightly, and delivers several short spoken lines with emotion brackets; small weight shifts only — this is a talking shot.',
+    },
+    '📞 Phone call pace': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Phone call while pacing.',
+        "choreography": 'She holds a phone to her ear, paces a few steps, turns torso+head together as she talks, then stops and lowers the phone.',
+    },
+    '🏋️ Workout rep': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Simple exercise beat.',
+        "choreography": 'She performs a clear rep (squat, push-up, or stretch) with controlled form, breath visible, then stands or resets facing camera.',
+    },
+    '🍳 Kitchen cook beat': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Cooking action.',
+        "choreography": 'She chops or stirs at a counter, lifts a pan or utensil, glances toward camera once, keeps hands busy with the task.',
+    },
+    '🚗 Lean on a car': {
+        "tag": 'SFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Lean against a car.',
+        "choreography": 'She leans back against the car body, one hand on the metal, weight settled, looking at camera.',
+    },
+    '💺 Sit between his legs': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": "She sits between a seated man's legs, back to his chest, facing camera.",
+        "choreography": 'She steps between his spread legs, turns to face the camera, lowers to sit between his legs with her back against his chest; small hip circles as she settles.',
+    },
+    '🪑 Lap sit, facing him': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'She sits on his lap facing him, chest to chest.',
+        "choreography": 'She steps over his thighs, faces him, lowers onto his lap straddling his hips, arms over his shoulders.',
+    },
+    '🔃 Grind on his lap': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Seated grind facing him.',
+        "choreography": 'Seated on his lap facing him, she rolls her hips forward and back in a slow steady rhythm, torso upright.',
+    },
+    '🧍 Pressed to a wall': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Pinned to a wall, clothed or as intent says.',
+        "choreography": 'He moves her back to the wall and leans in; she may lift one leg around his hip; faces stay close.',
+    },
+    '🔥 Missionary': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Missionary sex — she on her back, he between her legs.',
+        "choreography": 'She lies on her back, knees open. He kneels between her legs and drives his cock into her pussy in a steady rhythm; name penetration every section.',
+    },
+    '🔥 Doggy': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Doggy — she on all fours, he behind.',
+        "choreography": 'She on all fours, face toward camera if possible, back to him. He grips her hips and fucks her pussy from behind; continuous penetration language.',
+    },
+    '🔥 Cowgirl': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Cowgirl — she rides facing him.',
+        "choreography": 'She straddles him facing him, lowers onto his cock, rides with rolling hips, hands on his chest.',
+    },
+    '🔥 Reverse cowgirl': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Reverse cowgirl — she rides facing camera, back to him.',
+        "choreography": 'She straddles facing away, back to his chest, lowers onto his cock, rides while facing camera.',
+    },
+    '🔥 Bent over surface': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Bent over table/bed/counter, taken from behind.',
+        "choreography": 'She bends at the waist over the surface, ass up. He grips her hips and fucks her from behind.',
+    },
+    '🔥 Standing wall sex': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Standing sex against a wall.',
+        "choreography": 'Her back to the wall facing him; legs around his waist or one leg up; he fucks up into her.',
+    },
+    '🔥 Blowjob (kneeling)': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Kneeling blowjob.',
+        "choreography": 'She kneels facing him, takes his cock in her mouth, bobs in a steady rhythm; hand on shaft if needed; eyes up when free.',
+    },
+    '🔥 POV blowjob': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'POV blowjob — camera is his eyes; she services the view.',
+        "choreography": 'Eye-level male POV. She kneels into frame, takes the cock at the bottom edge into her mouth, bobs, hands visible; viewpoint = view/hands/sound only, never I/me/my body.',
+    },
+    '🔥 Oral on her': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'He eats her out.',
+        "choreography": 'She on her back or edge of bed, thighs open. He between her legs licking her pussy; her hips press up.',
+    },
+    '🔥 Face sitting': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'She sits on his face.',
+        "choreography": 'She straddles his head, lowers her pussy to his mouth, grinds slow circles; facing his feet or camera as fits.',
+    },
+    '🔥 69': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Mutual oral 69.',
+        "choreography": 'Head-to-toe: she sucks his cock while he licks her pussy; both rock together.',
+    },
+    '🔥 Spooning sex': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Side-lying sex from behind.',
+        "choreography": 'She on her side; he behind chest-to-back; cock into pussy from behind, spooned rhythm.',
+    },
+    '🍑 Doggy anal': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Anal doggy.',
+        "choreography": 'She on all fours; he behind drives cock into her ass; grip hips; plain anatomy every section.',
+    },
+    '🌸 F/F scissor / grind': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'Two women grind pussies together.',
+        "choreography": 'They interlock or stack and grind pussy-to-pussy in a building rhythm; hands on hips/thighs.',
+    },
+    '🌸 F/F oral': {
+        "tag": 'NSFW',
+        "modes": ('i2v', 't2v'),
+        "setup": 'One woman goes down on another.',
+        "choreography": 'One lies back thighs open; the other licks her pussy in a steady rhythm.',
+    },
+    '⚡ Jump: hello → POV blowjob': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens dressed, says hello; hard-cuts to POV blowjob (still clothed unless intent says naked).',
+        "choreography": "SECTIONS 1–2 (setup, ~first third): She faces the view or camera fully clothed as in the frame/intent, smiles or lifts a hand, and says a short hello/greeting with an emotion bracket (use the user's words if they gave a line). Small natural motion only — no undress yet. HARD JUMP CUT (next section — mandatory): Instant cut. She is on her knees at eye-level male POV if POV is on (else third-person close). WARDROBE: KEEP her clothes from setup/start image unless the user's intent clearly asks for naked/topless/stripped — blowjob does NOT require full nude (top, dress, jeans still on is fine and preferred). She takes his cock into her mouth and sucks in a steady bobbing rhythm; hands on shaft/hips; restate pose + oral plainly after the cut — do not invent a full strip. Remaining sections: continue the blowjob with wet sounds; free mouths talk if dialogue is on.",
+    },
+    '⚡ Jump: chat → doggy': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens talking/flirting dressed; hard-cuts to doggy sex.',
+        "choreography": 'SECTIONS 1–2: She (and he if present) talk face-to-face or she talks to camera, clothed, light gesture only. HARD JUMP CUT: Instant cut to her on all fours naked, him behind fucking her pussy doggy-style; name cock/pussy/penetration; no undress bridge. Continue doggy rhythm and dirty talk after the cut.',
+    },
+    '⚡ Jump: kiss → cowgirl': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens kissing; hard-cuts to her riding cowgirl.',
+        "choreography": 'SECTIONS 1–2: They kiss standing or seated, mostly clothed. HARD JUMP CUT: Instant cut to her naked straddling him, pussy on his cock, riding cowgirl facing him. Restate the new pose; continue ride + talk.',
+    },
+    '⚡ Jump: doorway hello → wall pin fuck': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens at a door saying hi; hard-cuts to standing wall sex.',
+        "choreography": 'SECTIONS 1–2: She in a doorway, greets him/camera, one step forward. HARD JUMP CUT: Her back naked against a wall, legs around him, he fucks her standing; plain penetration language.',
+    },
+    '⚡ Jump: dance → strip mid-song': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens dancing clothed; hard-cuts to topless or fully naked still dancing.',
+        "choreography": 'SECTIONS 1–2: She dances clothed to the beat. HARD JUMP CUT: Same dance energy but top gone or fully naked (as intensity allows); no slow peel — the cut removes the clothes. Continue dance + optional talk.',
+    },
+    '⚡ Jump: sofa talk → reverse cowgirl': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens sitting talking on a sofa; hard-cuts to reverse cowgirl.',
+        "choreography": 'SECTIONS 1–2: Both on a sofa talking, clothed. HARD JUMP CUT: She naked riding him reverse cowgirl facing camera, back to his chest, cock in pussy; continue ride + dirty talk.',
+    },
+    '⚡ Jump: mirror makeup → bent over sink': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens at mirror fixing hair/makeup; hard-cuts to bent over sink from behind.',
+        "choreography": 'SECTIONS 1–2: She at a mirror, touches hair or face, may speak to the reflection/camera. HARD JUMP CUT: She bent over the sink naked, him fucking her from behind; face may catch in mirror; penetration continuous after cut.',
+    },
+    '⚡ Jump: car lean hello → backseat sex': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens leaning on a car saying hi; hard-cuts to backseat sex.',
+        "choreography": 'SECTIONS 1–2: She leans on a car, greets, light pose. HARD JUMP CUT: Inside the car, seats reclined or backseat, explicit sex (missionary or her on top); restate cabin and naked contact.',
+    },
+    '⚡ Jump: interview smile → face sit': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens smiling/talking like an interview; hard-cuts to face sitting.',
+        "choreography": 'SECTIONS 1–2: She faces camera, smiles, delivers 1–2 clean spoken lines. HARD JUMP CUT: She straddling his face, grinding on his mouth; he under her; skirt/panties aside or lower half bare as needed — full nude only if intent asks; explicit oral language.',
+    },
+    '⚡ Jump: hug → mating press': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens in a hug; hard-cuts to mating press.',
+        "choreography": 'SECTIONS 1–2: Close clothed hug, small sway. HARD JUMP CUT: She on her back knees to chest, he folded over fucking deep missionary/mating press; name penetration.',
+    },
+    '⚡ Jump: wave to camera → solo fingers': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens waving hello; hard-cuts to solo masturbation.',
+        "choreography": 'SECTIONS 1–2: She waves and says hello to camera, clothed. HARD JUMP CUT: She naked, fingers in her pussy or rubbing clit, legs open to camera; no strip sequence — cut does the change.',
+    },
+    '⚡ Jump: SFW argument → angry makeout fuck': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens arguing; hard-cuts to rough sex.',
+        "choreography": 'SECTIONS 1–2: Heated argument, clothed, sharp spoken lines. HARD JUMP CUT: Clothes gone or shoved aside, him fucking her hard (wall or bed); keep angry/hungry dirty talk after the cut.',
+    },
+    '⚡ Jump: cook together → counter sex': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens cooking side by side; hard-cuts to sex on the counter.',
+        "choreography": 'SECTIONS 1–2: Kitchen task, light talk, clothed. HARD JUMP CUT: She on the counter, him between her legs fucking her; pans/kitchen still in background; explicit after cut.',
+    },
+    '⚡ Jump: gym spot → locker oral': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens gym/spotter beat; hard-cuts to oral in locker room.',
+        "choreography": 'SECTIONS 1–2: Gym motion or stretch, brief talk. HARD JUMP CUT: Locker bench, she kneeling blowing him or him eating her — keep gym clothes unless intent says stripped; restate location after cut.',
+    },
+    '⚡ Jump: texting on bed → him behind her': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens alone on bed on phone; hard-cuts to doggy/prone bone.',
+        "choreography": 'SECTIONS 1–2: She on bed with phone, maybe one line. HARD JUMP CUT: Phone gone, him behind fucking her into the mattress; face in pillow optional; explicit rhythm after cut.',
+    },
+    '⚡ Jump: hello → kneel for Mistress': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens dressed greeting the view; hard-cuts to kneeling power-exchange (collar/order).',
+        "choreography": (
+            "SECTIONS 1–2 (setup): She faces the view/camera fully clothed as in the start image, "
+            "short hello or soft command tease with emotion brackets — small motion only, no bondage yet. "
+            "HARD JUMP CUT (mandatory): Instant cut. POWER FRAME: she is upright as Domme/Mistress "
+            "(or he as Master if lead is male); the sub is on knees at the bottom of frame if POV male-sub "
+            "or she is kneeling to the view if POV is the Domme looking down. "
+            "WARDROBE: keep start-image clothes; ADD only one clear prop if the still allows "
+            "(collar already on, cuff click, crop in hand) — do not invent a full dungeon. "
+            "One hard order + one compliance beat after the cut. Explicit contact only if intent asks; "
+            "otherwise posture + command is enough. Free mouths: honorifics (Ma'am/Mistress/Sir)."
+        ),
+    },
+    '⚡ Jump: chat → collared restraint': {
+        "tag": 'JUMP',
+        "modes": ('i2v',),
+        "setup": 'Opens talking clothed; hard-cuts to collar/cuffs + controlled pose.',
+        "choreography": (
+            "SECTIONS 1–2: Face-to-face or to-camera talk, clothed, light gesture — establish who is in charge in tone. "
+            "HARD JUMP CUT: Instant cut. Sub is restrained (collar + leash taut, wrists cuffed, or rope already on) "
+            "in a held pose (kneel, hands behind, back to wall). Dom stands or sits with control of the prop. "
+            "ENTER-BEFORE-USE is already satisfied by the cut showing restraint on. "
+            "Remaining sections: one correction, one breath, optional explicit service if intent asks "
+            "(oral/hand) without stripping the whole outfit unless intent says naked."
+        ),
+    },
+
+    # ── I2V-first helpers ──────────────────────────────────────────────
+    '🖼 I2V: Honour pose — small motion only': {
+        'tag': 'SFW',
+        'modes': ('i2v',),
+        'setup': 'Start image is law. Subject stays in the same basic pose.',
+        'choreography': 'I2V ONLY: Do not walk them into a new set. First section restates exact pose/wardrobe from the frame.\nThen only small motions the still can support (breath, blink, weight shift, hand tighten, slight lean).\nIf dialogue is on, they talk without restaging. Never invent a second person not in the frame.',
+    },
+    '🖼 I2V: Look at view / camera from still': {
+        'tag': 'SFW',
+        'modes': ('i2v',),
+        'setup': 'From the start pose, turn attention toward the view/camera if the body can.',
+        'choreography': 'Honour the start image. If facing allows, rotate torso+head together toward the view.\nIf the still is face-down or back-to-camera, do NOT invent a face turn unless motion clearly starts it.\nOptional short greeting lines if dialogue is on.',
+    },
+    '🖼 I2V: Hands already on — tighten & continue': {
+        'tag': 'NSFW',
+        'modes': ('i2v',),
+        'setup': 'Contact already visible in the still continues; no re-placement from nowhere.',
+        'choreography': 'If hands/bodies are already touching in the image, they tighten, drag, or press — never re-enter as if new.\nBuild rhythm from existing contact. Explicit language only if the act is implied or intent asks.',
+    },
+    '🖼 I2V: Dialogue only — freeze body': {
+        'tag': 'SFW',
+        'modes': ('i2v',),
+        'setup': 'Talking head / still body; motion is micro only.',
+        'choreography': 'Body stays almost locked to the start image. Mouth, eyes, micro head+torso turns only.\nTalkative-friendly: many lines, almost no travel motion.',
+    },
+    '🖼 I2V: Animation still — keep the medium': {
+        'tag': 'SFW',
+        'modes': ('i2v',),
+        'setup': 'Start frame is animation / anime / illustrated — style is mandatory.',
+        'choreography': 'STYLE LOCK: This is animation (or the medium visible in the still). Every section must read as the same medium continuing from that exact frame — line weight, cel shading, paint style, or 3D toon look as shown.\nDo NOT collapse into live-action photoreal skin. Motion is animated motion: clear poses, readable arcs, no real-camera documentary feel.\nFirst section: restate the animated design (colours, outlines, costume shapes) from the still.',
+    },
+
+    # ── T2V deep shot recipes ─────────────────────────────────────────
+    '🎬 Recipe: Talkative rain kiss (12s pair)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Night rain under a bus-stop awning. Two people soaked, last bus almost gone.',
+        'choreography': "SECTION PLAN (talkative pair, ~11s write target for a 12s clip):\n1) Establish: rain streaks, wet hair, coats, bus timetable glow; they face each other under the awning.\n2) Stake talk: one says the last bus is in minutes; the other says they don't care.\n3) Prop beat: grip wet lapel or umbrella handle; rain noise under the lines.\n4) Almost-kiss lean: torsos turn together, mouths close, one short line about missing the bus on purpose.\n5) Kiss: mouths meet, hands in wet hair/coat, rain still visible on shoulders.\n6) Break for air + one more stake line, then kiss again or forehead press.\nEvery spoken line names rain, bus, wet clothes, or the choice to stay. No empty flirt stock.",
+        'stakes': 'Last bus leaving; choosing the kiss over the ride home.',
+        'dialogue_shape': 'Short urgent lines, 6–10 total; brackets warm/breathless; prop+stake every line.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Kitchen fight → kiss': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Small kitchen, argument mid-prep; marble or wood counter between them.',
+        'choreography': '1) Argue over something concrete (burnt pan / late text / open door) — sharp lines, hands busy with utensil or glass.\n2) Volume rises; one plants a palm on the counter (no teleport slam).\n3) Space closes; backs hit the counter edge.\n4) Anger flips into a kiss; utensil forgotten.\n5) Hands grip waist/jaw; one angry-hungry line between kisses.\nKeep counter grain visible. Head+torso turn together on face-offs.',
+        'stakes': 'The fight topic stays named until the kiss flips it.',
+        'dialogue_shape': 'Confrontation first half; heated short lines after. No begging.',
+        'cast_hint': 'pair',
+        'motion': 'intense',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Cafe leave now': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Daytime cafe booth; two cups; one person wants to leave for somewhere private.',
+        'choreography': '1) Cups, window light. Low voices about a plan (hotel / car / upstairs).\n2) Phone or watch check; stake: shift ends / roommate / rain starting.\n3) Legs touch or fingers brush; line about not finishing the coffee.\n4) Stand, coats, door — last line: we should leave now.\nPublic-safe motion; heat lives in talk and the exit.',
+        'stakes': 'Leave together before the window closes.',
+        'dialogue_shape': 'Conspiratorial, specific, 5–8 lines; end on leave-now.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Gym spotter flirt': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Gym floor, bench or squat rack; spotter + lifter.',
+        'choreography': '1) Chalk, bar, breath. Spotter hands hover near the bar.\n2) Rep with effort sounds; spotter cues form.\n3) Rest sit; towel; flirt tied to the set.\n4) Optional closer: hand on shoulder, charged line about after.\nName equipment every other section.',
+        'stakes': 'Finish the set; secondary stake = the after.',
+        'dialogue_shape': 'Focused + playful; effort grunts between lines.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'soft',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'standard',
+    },
+    '🎬 Recipe: Phone breakup walk': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Night sidewalk; one person on a phone call ending a relationship.',
+        'choreography': '1) Phone to ear, pacing; one-sided call we hear.\n2) Concrete terms: keys / dog / lease — not vague goodbye only.\n3) Stops under a light; jaw/eyes change.\n4) Ends call, lowers phone, one muttered line to empty air.\nSolo cast unless a second body is intentional.',
+        'stakes': 'Breakup terms (keys, dog, lease).',
+        'dialogue_shape': 'Phone-call register; 6+ lines; topic lock on terms.',
+        'cast_hint': 'solo',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 15,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: POV ♀ undress slow': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Bedroom/hotel; female-POV watching a partner undress for the view.',
+        'choreography': 'POV CONTRACT: Eye-level female POV. Only VIEW / HANDS / SOUND / CONSEQUENCE.\n1) Open Eye-level female POV; partner wardrobe concrete.\n2) Partner undresses one garment at a time; view hands may help a button.\n3) Partner talks to the view — heat, hurry, or slow down.\n4) Clothes land; partner steps closer to bottom edge.\nNever invent the viewpoint body or face.',
+        'stakes': 'Clothes off without rushing mechanism; charged talk.',
+        'dialogue_shape': 'Partner speaks; no hands-speak.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'standard',
+        'pov_hint': 'female',
+    },
+    '🎬 Recipe: POV ♂ strip tease talk': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Male POV; partner strips while talking to the view.',
+        'choreography': 'Eye-level male POV. Partner fills frame; viewpoint hands may grip at bottom edge.\nGarment removal is mechanism-only. Lines scene-tied (room, shirt, bed).\nBuild toward contact at bottom edge without viewpoint hips/face.',
+        'stakes': 'Partner controls pace; talk leads the strip.',
+        'dialogue_shape': 'Seductive + dirty-light; partner-only speech.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'pov_hint': 'male',
+    },
+    '🎬 Recipe: POV Mistress (domme view)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Female-POV Domme / Mistress; submissive partner fills the lower frame.',
+        'choreography': (
+            'POV CONTRACT: Eye-level female POV — view is HER eyes/body as Domme. '
+            'Only VIEW / HER HANDS / SOUND / CONSEQUENCE. Never invent her face or torso as an object.\n'
+            '1) Open: sub already low (kneeling / sitting back on heels / hands bound lightly) at bottom edge; '
+            'collar, cuffs, or leash optional but ENTERED if used.\n'
+            '2) Domme hands enter from bottom/sides — chin lift, collar tug, crop tap, or place hands on shoulders.\n'
+            '3) One clear order; sub complies (posture, eye line up into the view, short yes-Ma\'am).\n'
+            '4) Escalate: praise/denial OR controlled contact (hand service / oral on the view at bottom edge) '
+            'if heat is high — mouth-state law: busy mouth = sounds only.\n'
+            'Power is continuous: she controls pace. Pair cast. Explicit OK when free mouths allow.'
+        ),
+        'stakes': 'Will the sub earn relief or stay denied — say it in-world.',
+        'dialogue_shape': 'Domme: short commands + cool praise. Sub: brief honorific answers when free-mouth.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'pov_hint': 'female',
+        'explicit': True,
+    },
+    '🎬 Recipe: POV Sub (looking up)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Submissive POV looking up at a Domme/Mistress (or Master) who fills the frame.',
+        'choreography': (
+            'POV CONTRACT: Eye-level sub POV — view is the SUB\'s eyes from below. '
+            'Domme/Master fills the upper/mid frame looking down. '
+            'Only VIEW / SUB HANDS (if free) / SOUND / CONSEQUENCE. Never invent the viewpoint face.\n'
+            '1) Open low angle: boots, hem, collar ring, gloved hand, or standing legs; chin tilts up.\n'
+            '2) Domme speaks down into the view; issues one order; may rest a boot or hand near the bottom edge.\n'
+            '3) Sub hands (if free) rise into frame to touch boot/thigh/leash — or stay cuffed behind (state once).\n'
+            '4) Compliance beat + reaction (breath, shiver, short please/yes-Ma\'am). '
+            'Optional service toward the Domme body if intent is explicit — still no viewpoint body invention.\n'
+            'Who holds power is never ambiguous.'
+        ),
+        'stakes': 'Approval vs punishment — Domme names the price.',
+        'dialogue_shape': 'Domme owns most lines; sub short free-mouth answers only.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'pov_hint': 'male',
+        'explicit': True,
+    },
+    '🎬 Recipe: Collar check & kneel (third person)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Third-person power exchange: Domme checks collar; sub kneels; short command chain.',
+        'choreography': (
+            '1) Establish room (dim practicals) + both bodies; Domme upright, sub standing or already low.\n'
+            '2) Collar/cuffs ENTER then USE — finger under collar ring, clip leash, test fit.\n'
+            '3) Order to kneel; sub drops; Domme circles once or adjusts posture with a hand.\n'
+            '4) One reward or denial line; hold the kneel. Explicit only if intent pushes further.\n'
+            'Not a full dungeon inventory — one restraint system, clear power.'
+        ),
+        'stakes': 'Stay kneeling until told otherwise.',
+        'dialogue_shape': 'Commands + short compliance; honorifics.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'standard',
+        'explicit': True,
+    },
+    '🎬 Recipe: POV Master (male dom view)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Male-POV Master/Dom; submissive partner fills the lower frame.',
+        'choreography': (
+            'POV CONTRACT: Eye-level male POV — view is HIS eyes as Dom/Master. '
+            'Only VIEW / HIS HANDS / SOUND / CONSEQUENCE. Never invent his face or torso as an object.\n'
+            '1) Sub already low (kneeling / sitting back on heels) at bottom edge; collar optional but ENTERED if used.\n'
+            '2) Dom hands enter — chin lift, hair grip, collar tug, or place on shoulders.\n'
+            '3) One clear order; sub complies (posture, eyes up into the view, short yes-Sir).\n'
+            '4) Escalate: praise/denial OR controlled contact at bottom edge if heat is high — mouth-state law.\n'
+            'He controls pace. Pair cast. Explicit OK when free mouths allow.'
+        ),
+        'stakes': 'Earn relief or stay denied — Dom names it.',
+        'dialogue_shape': 'Dom short commands; sub brief honorific answers when free-mouth.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'pov_hint': 'male',
+        'explicit': True,
+    },
+    '🎬 Recipe: POV ♀ Sub (looking up at Master)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Female-POV sub looking up at a Master/Dom who fills the frame.',
+        'choreography': (
+            'POV CONTRACT: Eye-level female sub POV — view is HER eyes from below. '
+            'Dom/Master fills upper frame looking down. Only VIEW / SUB HANDS (if free) / SOUND / CONSEQUENCE.\n'
+            '1) Open low angle: boots, belt, hand, jaw — chin tilts up.\n'
+            '2) Dom speaks down; one order; may rest a hand near bottom edge.\n'
+            '3) Sub hands (if free) rise to touch boot/thigh — or stay bound (state once).\n'
+            '4) Compliance + breath + short please/yes-Sir. Optional service if intent explicit.\n'
+            'Power is never ambiguous.'
+        ),
+        'stakes': 'Approval vs correction — Dom sets the price.',
+        'dialogue_shape': 'Dom owns most lines; sub short free-mouth answers.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'pov_hint': 'female',
+        'explicit': True,
+    },
+    '🎬 Recipe: Solo window rain silent': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'One person at a rainy window; pure motion and breath.',
+        'choreography': 'Silent: breath fog on glass, finger trace, weight shift, look out then down.\nNo spoken words. Sound = rain + breath. One prop (mug / phone dark).\n3–5 sections max.',
+        'stakes': 'Waiting or deciding to leave — shown, not told.',
+        'dialogue_shape': 'None — silent.',
+        'cast_hint': 'solo',
+        'motion': 'asmr',
+        'mouth_heat': 'asmr',
+        'duration_hint': 10,
+        'dialogue_tier_hint': 'none',
+    },
+    '🎬 Recipe: Club pull-in dance': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Dark club, bass-heavy; two people find each other.',
+        'choreography': '1) Crowd smear + lights; they spot each other.\n2) Pull-in: hand on waist, bodies sync to the beat.\n3) Mouths near ears — short lines over music (drink, exit, song energy).\n4) Grind/sway; optional kiss; leave toward hallway.\nHead+torso turn together in crowd turns.',
+        'stakes': 'Leave together vs stay on the floor.',
+        'dialogue_shape': 'Short loud lines; brackets over the music.',
+        'cast_hint': 'pair',
+        'motion': 'intense',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'standard',
+    },
+    '🎬 Recipe: Hotel door pin (explicit)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Hotel hallway → room; key card, door, wall pin.',
+        'choreography': '1) Door opens; key card / Do Not Disturb as props.\n2) Back to door; kissing; jacket/shirt off one piece at a time.\n3) Explicit sex against door or bed edge — name anatomy once it starts.\n4) Dirty talk tied to the room (neighbors, checkout).\nNo teleport nudity — access clothing first.',
+        'stakes': "Don't wake the hallway; checkout time.",
+        'dialogue_shape': 'Intense dirty talk, room props, no loops.',
+        'cast_hint': 'pair',
+        'motion': 'aggressive',
+        'mouth_heat': 'aggressive',
+        'duration_hint': 15,
+        'dialogue_tier_hint': 'talkative',
+        'explicit': True,
+    },
+    '🎬 Recipe: Backseat night (explicit)': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Parked car at night; streetlight; cramped backseat.',
+        'choreography': '1) Seat recline / climb — cramped mechanism matters.\n2) Clothes shoved aside (jeans to knees) — access before penetration.\n3) Explicit sex; windows fog as consequence.\n4) Lines about being seen, gear stick, cold leather.\nKeep cabin geometry honest.',
+        'stakes': 'Someone could walk by; fogged glass; limited space.',
+        'dialogue_shape': 'Whispered urgency + explicit; car props.',
+        'cast_hint': 'pair',
+        'motion': 'intense',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'explicit': True,
+    },
+    '🎬 Recipe: ASMR hair brush monologue': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Close vanity; brush hair / lotion; close-mic talk.',
+        'choreography': 'ASMR: soft voice, long sibilants, brush strokes as prose sound.\nTalk about calm concrete things (brush, light, breathing).\nMotion stays small.',
+        'stakes': 'Keep the listener calm / present.',
+        'dialogue_shape': 'ASMR register; many soft lines; no degradation.',
+        'cast_hint': 'solo',
+        'motion': 'asmr',
+        'mouth_heat': 'asmr',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Airport last call': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Airport gate; departure board; one person leaving.',
+        'choreography': '1) Rolling bag, boarding pass, gate numbers spoken.\n2) Goodbye or solo rush — name flight time and city.\n3) Hug or almost-kiss under the board; last call PA as sound.\n4) Walk toward jet bridge; look-back torso+head together.\nSpecificity mandatory: gate, city, time.',
+        'stakes': 'Miss the flight vs miss the person.',
+        'dialogue_shape': 'Talkative stakes; flight facts in the lines.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'soft',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Garage bolt + wrench talk': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Residential garage; wrench; work light.',
+        'choreography': 'Hands on real tools; dialogue about the stuck bolt, the part on order, the beer after.\nOptional light flirt prop-tied. Grease on fingers as continuity.',
+        'stakes': 'Get the bolt free before dark.',
+        'dialogue_shape': 'Casual + focused; tool names.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'soft',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Argument street then walk-off': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'City sidewalk; public argument.',
+        'choreography': 'Sharp lines with a concrete grievance (message, friend, money).\nHands gesture; step in / step back; never head-only turns.\nEnds with walk-away + one last line down the sidewalk.',
+        'stakes': 'Named grievance; separation unless intent flips it.',
+        'dialogue_shape': 'Confrontation; no begging default.',
+        'cast_hint': 'pair',
+        'motion': 'intense',
+        'mouth_heat': 'intense',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Undress button-by-button': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Close bedroom light; shirt or dress with many buttons.',
+        'choreography': 'Each section opens one or two buttons — mechanism only.\nDialogue about heat, AC, the next button — never stock you-wish loops.\nIf explicit intent: after access, plain anatomy; else stop at open shirt.',
+        'stakes': "Don't rush the buttons; the wait is the point.",
+        'dialogue_shape': 'Soft-to-normal heat; unique lines; zero phrase loops.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 15,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Group party kitchen spill': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'House party kitchen island; three+ people; drinks.',
+        'choreography': 'GROUP: tag people by wardrobe (red dress / leather jacket / gold chain).\nSpill or toast; overlapping short lines; focus two bodies per section.\nStable identities — no face swaps.',
+        'stakes': 'Who goes home with whom / who spilled on whom.',
+        'dialogue_shape': 'Overlapping casual + playful; name people by tags.',
+        'cast_hint': 'group',
+        'motion': 'normal',
+        'mouth_heat': 'normal',
+        'duration_hint': 15,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Shower steam pair': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Steam shower; tile; two bodies; continuous water.',
+        'choreography': 'Water runs; soap; faces in steam. Soft-to-intense contact against tile.\nIf explicit: name wet contact honestly; water continuity.\nShort lines that could echo off tile.',
+        'stakes': 'Hot water running out; bathroom privacy.',
+        'dialogue_shape': 'Close soft or intense; few words, lots of breath.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'standard',
+    },
+    '🎬 Recipe: Office after-hours': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Empty office at night; monitor glow; desk lamp.',
+        'choreography': "Two coworkers who shouldn't; talk about email / deadline / elevator cameras.\nDesk edge pin or chair; clothes access only if intent explicit.\nProps: badge lanyard, cold coffee, spreadsheet light.",
+        'stakes': 'Getting caught; morning meeting.',
+        'dialogue_shape': 'Conspiratorial whisper + workplace props.',
+        'cast_hint': 'pair',
+        'motion': 'normal',
+        'mouth_heat': 'normal',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Elevator stuck talk': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Elevator car; panel buttons; stuck between floors.',
+        'choreography': '1) Jolt stop; panel; alarm or intercom.\n2) Talk fills the wait: floors, jobs, carpet smell.\n3) Close bodies, polite then less polite.\n4) Optional almost-kiss when lights flicker; doors may crack open.\nName buttons, floor numbers, alarm.',
+        'stakes': 'Time trapped; how intimate before rescue.',
+        'dialogue_shape': 'Talkative prop-rich goldmine.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'soft',
+        'duration_hint': 15,
+        'dialogue_tier_hint': 'talkative',
+    },
+    '🎬 Recipe: Aggressive wall pin fuck': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Hall or bedroom wall; clothes yanked for access; hard pace.',
+        'choreography': 'Aggressive body intensity: pin, lift leg, access zipper/skirt, plain penetration every section.\nMouth heat aggressive: short filthy lines, varied insults, no phrase loops.\nWall texture and doorframe as props.',
+        'stakes': 'Hard and fast before someone comes home.',
+        'dialogue_shape': 'Filthy, short, varied; wall/door props.',
+        'cast_hint': 'pair',
+        'motion': 'aggressive',
+        'mouth_heat': 'aggressive',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+        'explicit': True,
+    },
+    '🎬 Recipe: Soft morning bed talk': {
+        'tag': 'RECIPE',
+        'modes': ('t2v',),
+        'setup': 'Morning bed; sheets; window light; no rush.',
+        'choreography': 'Soft bodies under sheets; small motions; coffee smell or phone face-down as prop.\nTalk about the day ahead, last night, staying ten more minutes.\nNo aggressive sex unless intent flips — this is soft intimacy.',
+        'stakes': 'Get up for work vs stay.',
+        'dialogue_shape': 'Soft intimate + casual; many gentle lines.',
+        'cast_hint': 'pair',
+        'motion': 'soft',
+        'mouth_heat': 'soft',
+        'duration_hint': 12,
+        'dialogue_tier_hint': 'talkative',
+    },
 }
+
 
 SCENARIO_KEYS = list(SCENARIO_PRESETS.keys())
 
-# Pool the seed can pick from for "RANDOM" (everything except the two sentinels).
-_SCENARIO_RANDOM_POOL = [k for k, v in SCENARIO_PRESETS.items()
-                         if v not in (None, "RANDOM")]
+_SENTINELS = {"None — user's prompt decides", "🎲 Random — seed picks"}
 
-# Convenience splits (a filter toggle in the UI can use these).
-SCENARIO_SFW = [k for k, v in SCENARIO_PRESETS.items()
-                if isinstance(v, tuple) and v[0] == "SFW"]
-SCENARIO_NSFW = [k for k, v in SCENARIO_PRESETS.items()
-                 if isinstance(v, tuple) and v[0] == "NSFW"]
+
+def _is_playable(val):
+    n = normalize_scenario(val)
+    return isinstance(n, dict)
+
+
+_SCENARIO_RANDOM_POOL = [
+    k for k, v in SCENARIO_PRESETS.items() if _is_playable(v)
+]
+
+
+def keys_for_mode(mode: str = "i2v") -> list:
+    """UI list: sentinels + scenarios allowed for this video mode.
+
+    I2V: JUMP cuts ONLY. Honour-pose / freeze / dual-mode helpers fight the
+    start frame unless the still is perfect — they stay in the bank for T2V
+    dual-mode if tagged, but are hidden from the I2V dropdown.
+    T2V: shot recipes first, then rest, then JUMP (if any dual-mode).
+    """
+    m = (mode or "i2v").lower().strip()
+    if m not in ("i2v", "t2v"):
+        m = "i2v"
+    out = ["None — user's prompt decides", "🎲 Random — seed picks"]
+    recipes, jumps, rest = [], [], []
+    for k, v in SCENARIO_PRESETS.items():
+        if k in _SENTINELS:
+            continue
+        n = normalize_scenario(v)
+        if not isinstance(n, dict):
+            continue
+        if m not in n.get("modes", ("i2v", "t2v")):
+            continue
+        tag = n.get("tag", "")
+        if tag == "RECIPE":
+            recipes.append(k)
+        elif tag == "JUMP":
+            jumps.append(k)
+        else:
+            rest.append(k)
+    if m == "t2v":
+        out.extend(recipes)
+        out.extend(rest)
+        out.extend(jumps)
+    else:
+        # I2V dropdown: JUMP only
+        out.extend(jumps)
+    return out
 
 
 def scenario_tag(key):
-    """Return 'SFW' / 'NSFW' / '' for a scenario key."""
-    v = SCENARIO_PRESETS.get(key)
-    return v[0] if isinstance(v, tuple) else ""
+    v = normalize_scenario(SCENARIO_PRESETS.get(key))
+    return v.get("tag", "") if isinstance(v, dict) else ""
 
 
-def scenario_is_explicit(key, seed=0):
-    """True when the selected scenario is NSFW — the node uses this to FORCE the
-    explicit gate ON, so picking e.g. 'Doggy' engages explicit rendering even if
-    the user's typed prompt was tame. The scenario is a deliberate content signal."""
-    v = resolve_scenario(key, seed=seed)
-    return bool(v and v[0] == "NSFW")
+def scenario_modes(key):
+    v = normalize_scenario(SCENARIO_PRESETS.get(key))
+    return list(v.get("modes", ())) if isinstance(v, dict) else []
 
 
-def resolve_scenario(key, seed=0):
-    """Return the (tag, setup, choreography) tuple for a key, resolving RANDOM
-    with the seed. Returns None for the no-scenario sentinel."""
-    v = SCENARIO_PRESETS.get(key) if key else None
-    if v == "RANDOM":
-        import random
-        rng = random.Random(seed or None)
-        v = SCENARIO_PRESETS.get(rng.choice(_SCENARIO_RANDOM_POOL))
-    return v if isinstance(v, tuple) else None
-
-
-def build_scenario_block(key, seed=0):
-    """The additive activation block, injected on top of the user's prompt.
-    Mirrors the environment block: an activation layer that supplies ARRANGEMENT
-    and MOTION while the user's own words keep priority for identity/wardrobe/
-    specifics. Returns '' when no scenario is selected.
-
-    Key principle baked in: THE MODEL IS LITERAL — no write, no see. 
-
-For positioning scenarios: describe the physical ACTION the person performs (steps between legs, turns torso, lowers hips to sit, etc.) using neutral spatial terms. Do not name the result of body contact ("ass against crotch", "pressing against him").
-
-For explicit sex act scenarios: use direct anatomical language so the model actually renders the contact."""
-    v = resolve_scenario(key, seed=seed)
+def scenario_is_explicit(key, seed=0, mode=None):
+    v = resolve_scenario(key, seed=seed, mode=mode)
     if not v:
+        return False
+    if v.get("explicit") is True:
+        return True
+    return v.get("tag") in ("NSFW", "JUMP")
+
+
+def _seed_rng(seed=0):
+    import random
+    try:
+        s = int(seed) & 0x7FFFFFFF
+    except (TypeError, ValueError):
+        s = 0
+    return random.Random(s)
+
+
+def resolve_scenario_key(key, seed=0, mode=None) -> str:
+    """Return concrete scenario key (RANDOM → picked for mode)."""
+    k = (key or "").strip()
+    if not k:
+        return k
+    v = SCENARIO_PRESETS.get(k)
+    if v == "RANDOM" or k in ("🎲 Random — seed picks", "RANDOM"):
+        pool = list(_SCENARIO_RANDOM_POOL)
+        if mode:
+            m = (mode or "").lower()
+            filtered = []
+            for pk in pool:
+                n = normalize_scenario(SCENARIO_PRESETS.get(pk))
+                if not isinstance(n, dict) or m not in n.get("modes", ()):
+                    continue
+                if m == "i2v" and n.get("tag") != "JUMP":
+                    continue
+                filtered.append(pk)
+            pool = filtered or pool
+        if not pool:
+            return k
+        return _seed_rng(seed).choice(pool)
+    return k
+
+
+def resolve_scenario(key, seed=0, mode=None):
+    """Return normalized dict or None. RANDOM respects mode filter when given."""
+    concrete = resolve_scenario_key(key, seed=seed, mode=mode)
+    v = SCENARIO_PRESETS.get(concrete) if concrete else None
+    if v == "RANDOM":
+        return None
+    n = normalize_scenario(v)
+    return n if isinstance(n, dict) else None
+
+
+def resolve_scenario_tuple(key, seed=0, mode=None):
+    """Back-compat: (tag, setup, choreography) or None."""
+    d = resolve_scenario(key, seed=seed, mode=mode)
+    if not d:
+        return None
+    return (d.get("tag") or "SFW", d.get("setup") or "", d.get("choreography") or "")
+
+
+def build_scenario_block(key, seed=0, mode=None):
+    d = resolve_scenario(key, seed=seed, mode=mode)
+    if not d:
         return ""
-    tag, setup, choreo = v
+    tag = d.get("tag") or "SFW"
     block = (
-        "\u2501\u2501 SCENARIO \u2014 THIS IS THE ACTION OF THE CLIP (mandatory) \u2501\u2501\n"
-        f"  Setup: {setup}\n"
-        f"  Choreography to render: {choreo}\n"
-        "This scenario is WHAT HAPPENS in the clip \u2014 the subject MUST perform this action with precise body orientation. "
-        "It is not optional flavour. If an environment/location is also given, that is only WHERE this action takes place. "
-        "CRITICAL — BODY ORIENTATION MUST BE EXPLICIT IN EVERY BEAT:\n"
-        "- State exact facing relative to him and camera: 'facing him chest-to-chest', 'back fully to him and facing the camera', 'hips forward, upper body turned toward camera'.\n"
-        "- Head/neck turn ONLY is forbidden. If she looks back or turns: she rotates her TORSO + shoulders + head together at the waist as one unit.\n"
-        "- When facing away from the man: her back faces him; she faces the camera (unless the prompt says otherwise).\n"
-        "- Describe the ACTION the person performs (she steps, she turns her torso, she lowers her hips, she sits) using neutral spatial terms. Do not describe the result of body contact (avoid 'ass against crotch', 'pressing against his', etc.).\n"
-        "- When she turns to face him: describe the full torso rotation + weight shift.\n"
-        "Use only short, direct, physical sentences with finite verbs. The model is literal.\n"
+        "━━ SCENARIO — THIS IS THE ACTION (mandatory) ━━\n"
+        f"Setup: {d.get('setup', '')}\n"
+        f"Choreography: {d.get('choreography', '')}\n"
     )
-    if tag == "NSFW":
+    if tag == "RECIPE":
+        if d.get("stakes"):
+            block += f"Stakes: {d['stakes']}\n"
+        if d.get("dialogue_shape"):
+            block += f"Dialogue shape: {d['dialogue_shape']}\n"
+        if d.get("cast_hint"):
+            block += f"Cast hint: {d['cast_hint']} (honour node cast if set).\n"
         block += (
-            "\u2501\u2501 EXPLICIT RENDER (mandatory for this scenario) \u2501\u2501\n"
-            "This is an explicit sexual scene. The video model is LITERAL \u2014 it only renders what the "
-            "words on the page name. Write the act plainly and anatomically: name the cock, pussy, ass, "
-            "the penetration, the point of contact, the wetness \u2014 in EVERY beat. Do NOT soften it into "
-            "'takes him in', 'joins with', 'moves together' or other coy phrasing; those render nothing. "
-            "Show the explicit contact continuously across the whole clip: where the cock is, what it is "
-            "doing, how deep, how fast, and the visible physical response (skin rippling, wetness, bodies "
-            "impacting). Keep every named body part and action from the choreography above present on screen.\n"
+            "This is a SHOT RECIPE — follow the section plan and stakes. "
+            "User intent still outranks wardrobe/identity fluff.\n"
+        )
+    if tag == "JUMP":
+        block += (
+            "JUMP CUT RULES: First sections = setup only. Then a HARD CUT section that "
+            "restates the NEW pose/act in plain mechanism language. Do not slowly "
+            "undress into the second half unless choreography says so — the cut is the transition. "
+            "WARDROBE: oral/blowjob keeps clothes unless intent asks nude; penetrative sex may leap "
+            "to naked/access; strip/solo cuts may change wardrobe. After the cut, stay in the new reality.\n"
+        )
+    if tag in ("NSFW", "JUMP") or d.get("explicit"):
+        block += (
+            "EXPLICIT: after any cut (or from the start for pure NSFW), name anatomy and "
+            "contact plainly where the act requires it.\n"
         )
     return block
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Live editing helpers (used by the UI "edit scenario" button)
-# ─────────────────────────────────────────────────────────────────────────────
-
-import re
-import os
-import sys
-import importlib
-
 def get_scenario_data(key):
-    """Return editable data for the UI."""
-    v = SCENARIO_PRESETS.get(key)
-    if isinstance(v, tuple) and len(v) == 3:
-        return {
-            "tag": v[0],
-            "setup": v[1],
-            "choreography": v[2]
-        }
-    return None
+    d = normalize_scenario(SCENARIO_PRESETS.get(key))
+    if not isinstance(d, dict):
+        return None
+    return {
+        "tag": d.get("tag"),
+        "setup": d.get("setup", ""),
+        "choreography": d.get("choreography", ""),
+        "modes": list(d.get("modes") or []),
+        "stakes": d.get("stakes", ""),
+        "dialogue_shape": d.get("dialogue_shape", ""),
+        "cast_hint": d.get("cast_hint", ""),
+        "motion": d.get("motion", ""),
+        "mouth_heat": d.get("mouth_heat", ""),
+        "duration_hint": d.get("duration_hint"),
+        "dialogue_tier_hint": d.get("dialogue_tier_hint", ""),
+        "pov_hint": d.get("pov_hint", ""),
+        "explicit": bool(d.get("explicit")),
+    }
+
+
+def recipe_ui_hints(key, seed=0, mode=None) -> dict:
+    d = resolve_scenario(key, seed=seed, mode=mode)
+    if not d or d.get("tag") != "RECIPE":
+        return {}
+    hints = {}
+    for field in (
+        "cast_hint", "motion", "mouth_heat", "duration_hint",
+        "dialogue_tier_hint", "pov_hint",
+    ):
+        if d.get(field) not in (None, ""):
+            hints[field] = d[field]
+    if d.get("explicit"):
+        hints["explicit"] = True
+    return hints
+
+
+SCENARIO_SFW = [
+    k for k, v in SCENARIO_PRESETS.items()
+    if isinstance(normalize_scenario(v), dict) and normalize_scenario(v).get("tag") == "SFW"
+]
+SCENARIO_NSFW = [
+    k for k, v in SCENARIO_PRESETS.items()
+    if isinstance(normalize_scenario(v), dict) and normalize_scenario(v).get("tag") in ("NSFW", "JUMP")
+]
+SCENARIO_JUMP = [
+    k for k, v in SCENARIO_PRESETS.items()
+    if isinstance(normalize_scenario(v), dict) and normalize_scenario(v).get("tag") == "JUMP"
+]
+SCENARIO_RECIPES = [
+    k for k, v in SCENARIO_PRESETS.items()
+    if isinstance(normalize_scenario(v), dict) and normalize_scenario(v).get("tag") == "RECIPE"
+]
+SCENARIO_I2V_KEYS = keys_for_mode("i2v")
+SCENARIO_T2V_KEYS = keys_for_mode("t2v")
 
 
 def _python_string_literal(text: str) -> str:
-    """Escape text as a double-quoted Python string."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
     return f'"{escaped}"'
 
 
 def update_scenario_in_source(key: str, new_setup: str, new_choreography: str) -> bool:
-    """
-    Edit the scenario directly in this file and hot-reload.
-    This lets the user refine scenarios from the UI without restarting Comfy.
-    """
+    """Best-effort edit of setup/choreography strings for the UI save button."""
     filepath = os.path.abspath(__file__)
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Match: 'Exact Key': ('TAG', "old setup", "old choreo"),
-    pattern = (
-        rf"('{re.escape(key)}':\s*\()"
-        r"('[^']*'|\"[^\"]*\"),\s*"
-        r"('[^']*'|\"[^\"]*\"),\s*"
-        r"('[^']*'|\"[^\"]*\")"
-        r"(\),)"
-    )
+    setup_lit = _python_string_literal(new_setup)
+    choreo_lit = _python_string_literal(new_choreography)
 
-    def replacer(m):
-        tag_part = m.group(2)
-        setup_lit = _python_string_literal(new_setup)
-        choreo_lit = _python_string_literal(new_choreography)
-        return f"{m.group(1)}{tag_part}, {setup_lit}, {choreo_lit}{m.group(5)}"
-
-    new_content, count = re.subn(pattern, replacer, content, count=1)
-
-    if count == 0:
+    # Find dict block for this key
+    m = re.search(rf'("{re.escape(key)}")\s*:\s*\{{', content)
+    if not m:
         return False
+    start = m.end()
+    depth = 1
+    i = start
+    while i < len(content) and depth:
+        ch = content[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    block = content[start : i - 1]
+
+    def repl_field(block_text, field, lit):
+        pat = rf'("{field}"\s*:\s*)("(?:[^"\\]|\\.)*")'
+        new_b, n = re.subn(pat, rf"\1{lit}", block_text, count=1)
+        return new_b, n
+
+    block2, c1 = repl_field(block, "setup", setup_lit)
+    block3, c2 = repl_field(block2, "choreography", choreo_lit)
+    if c1 == 0 and c2 == 0:
+        return False
+    new_content = content[:start] + block3 + content[i - 1 :]
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    # Hot reload so the current process sees the change
     mod = sys.modules[__name__]
     importlib.reload(mod)
-
-    # Make sure our local globals are updated
     global SCENARIO_PRESETS
     SCENARIO_PRESETS = mod.SCENARIO_PRESETS
-
     return True
 
 
 if __name__ == "__main__":
-    print("total scenarios:", len(SCENARIO_PRESETS) - 2, "(+2 sentinels)")
-    print("SFW:", len(SCENARIO_SFW), "| NSFW:", len(SCENARIO_NSFW))
-    print("random pool:", len(_SCENARIO_RANDOM_POOL))
-    print()
-    print("sample SFW block:")
-    print(build_scenario_block("🪑 Sit down on a chair"))
-    print("sample NSFW block:")
-    print(build_scenario_block("🫂 Bent-over hug over his lap"))
+    print("total playable:", len(_SCENARIO_RANDOM_POOL))
+    print(
+        "SFW:", len(SCENARIO_SFW),
+        "| NSFW+JUMP:", len(SCENARIO_NSFW),
+        "| JUMP:", len(SCENARIO_JUMP),
+        "| RECIPES:", len(SCENARIO_RECIPES),
+    )
+    print("I2V keys:", len(SCENARIO_I2V_KEYS), "T2V keys:", len(SCENARIO_T2V_KEYS))
