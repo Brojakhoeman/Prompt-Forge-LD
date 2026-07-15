@@ -7,17 +7,17 @@
  *   - STR / V× / A× render as "cup of water" level boxes:
  *       hover a box + scroll wheel  -> raises / lowers the fill (and the value)
  *       click a box                 -> type a value manually
- *   - JADE / NEON / GOLD themes reuse the PromptForge palette tokens
+ *   - Themes shared with PromptForge (themes_ld.js) — same names & hues
  */
 import { app } from "../../../scripts/app.js";
+import {
+  THEME_KEYS,
+  resolveTheme,
+  loadSharedThemeKey,
+  saveSharedThemeKey,
+} from "./themes_ld.js";
 
-/* ----------------------------------------------------------------- themes */
-const THEMES = {
-  a: { name: "JADE", str: "#ffc857", v: "#5ce1e6", a: "#a855f7", on: "#5ce1e6", off: "#ff6b6b", accent: "#5ce1e6" },
-  b: { name: "NEON", str: "#ff2d88", v: "#5ce1e6", a: "#bf5fff", on: "#39ff7a", off: "#ff2d88", accent: "#ff2d88" },
-  c: { name: "GOLD", str: "#ffc857", v: "#5ce1e6", a: "#a855f7", on: "#ffc857", off: "#ff6b6b", accent: "#ffc857" },
-};
-const THEME_ORDER = ["a", "b", "c"];
+const THEME_ORDER = THEME_KEYS.slice();
 
 /* ----------------------------------------------------------------- helpers */
 const keyCache = {};
@@ -30,8 +30,11 @@ const shortName = (lora) =>
   lora === "None" ? "None" : lora.split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
 
 /* ----------------------------------------------------------------- styles */
-const STYLE_ID = "lfld-styles";
+const STYLE_ID = "lfld-styles-v3";
 function ensureStyles() {
+  // Replace older injects so theme CSS updates after reload
+  const old = document.getElementById("lfld-styles");
+  if (old) old.remove();
   if (document.getElementById(STYLE_ID)) return;
   const el = document.createElement("style");
   el.id = STYLE_ID;
@@ -40,12 +43,18 @@ function ensureStyles() {
   --bg:#07040e; --panel:rgba(255,255,255,.03); --text:#f0ebff; --muted:#7d7394;
   --gold:#ffc857; --cyan:#5ce1e6; --violet:#a855f7; --line:rgba(255,255,255,.08);
   --str:#ffc857; --vc:#5ce1e6; --ac:#a855f7; --accent:#5ce1e6;
+  --on-color:#5ce1e6;
   width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:8px;
   font-family:'Outfit',system-ui,sans-serif; color:var(--text);
-  background:var(--bg); padding:12px; border-radius:8px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 50%),
+    radial-gradient(90% 60% at 100% 0%, color-mix(in srgb, var(--vc) 10%, transparent), transparent 45%),
+    var(--bg);
+  padding:12px; border-radius:10px;
+  border:1px solid var(--line);
+  transition: background .25s ease, color .2s ease, border-color .2s ease;
 }
 .lfld-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.lfld-title { font:700 20px 'Outfit',sans-serif; }
 .lfld-tools { display:flex; align-items:center; gap:6px; }
 .lfld-theme-btn {
   font:600 11px 'JetBrains Mono',monospace; color:var(--accent);
@@ -71,6 +80,14 @@ function ensureStyles() {
   gap:6px; align-items:center;
   background:var(--panel); border:1px solid var(--line);
   border-radius:8px; padding:6px;
+  transition: border-color .2s ease, background .2s ease;
+}
+.lfld-title {
+  font:700 20px 'Outfit',sans-serif;
+  background: linear-gradient(90deg, var(--accent), var(--vc));
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 35%, transparent));
 }
 .lfld-on {
   font:700 10px 'JetBrains Mono',monospace; letter-spacing:.04em;
@@ -163,11 +180,20 @@ app.registerExtension({
     if (node.comfyClass !== "LoraForgeLD") return;
     ensureStyles();
 
-    node.color = "#120a1c";
-    node.bgcolor = "#08050f";
-
     node.properties = node.properties || {};
-    if (!node.properties.theme) node.properties.theme = "a";
+    // Prefer shared PromptForge theme; map legacy a/b/c via resolveTheme
+    if (!node.properties.theme) {
+      node.properties.theme = loadSharedThemeKey();
+    } else {
+      node.properties.theme = resolveTheme(node.properties.theme).id;
+    }
+    {
+      const { theme: bootT } = resolveTheme(node.properties.theme);
+      if (bootT.node) {
+        node.color = bootT.node.color;
+        node.bgcolor = bootT.node.bgcolor;
+      }
+    }
     if (!node.properties.stack_data) {
       node.properties.stack_data = JSON.stringify([{ on: true, lora: "None", str: 1.0, vs: 1.0, as: 1.0 }]);
     }
@@ -215,16 +241,32 @@ app.registerExtension({
     container.className = "lfld-root";
 
     const applyThemeVars = () => {
-      const t = THEMES[node.properties.theme || "a"];
+      const { id, theme } = resolveTheme(node.properties.theme);
+      node.properties.theme = id;
+      const t = theme.lf;
       container.style.setProperty("--str", t.str);
       container.style.setProperty("--vc", t.v);
       container.style.setProperty("--ac", t.a);
       container.style.setProperty("--accent", t.accent);
       container.style.setProperty("--on-color", t.on);
+      container.style.setProperty("--bg", t.bg);
+      container.style.setProperty("--panel", t.panel);
+      container.style.setProperty("--text", t.text);
+      container.style.setProperty("--muted", t.muted);
+      container.style.setProperty("--line", t.line);
+      container.style.setProperty("--gold", t.str);
+      container.style.setProperty("--cyan", t.v);
+      container.style.setProperty("--violet", t.a);
+      if (theme.node) {
+        node.color = theme.node.color;
+        node.bgcolor = theme.node.bgcolor;
+      }
     };
 
     const build = () => {
-      const t = THEMES[node.properties.theme || "a"];
+      const { id, theme } = resolveTheme(node.properties.theme);
+      node.properties.theme = id;
+      const t = theme;
       const data = getData();
       applyThemeVars();
 
@@ -232,7 +274,7 @@ app.registerExtension({
 <div class="lfld-head">
   <span class="lfld-title">✦ LoraForge LD</span>
   <div class="lfld-tools">
-    <div class="lfld-theme-btn" id="lfld-theme">THEME: ${t.name}</div>
+    <div class="lfld-theme-btn" id="lfld-theme" title="Cycle theme (matches PromptForge)">THEME: ${t.name}</div>
     <div class="lfld-mini" id="lfld-add" title="Add slot">+</div>
     ${data.length > 1 ? `<div class="lfld-mini rm" id="lfld-del" title="Remove last slot">−</div>` : ""}
   </div>
@@ -269,9 +311,13 @@ app.registerExtension({
       });
 
       container.querySelector("#lfld-theme").onclick = () => {
-        const idx = THEME_ORDER.indexOf(node.properties.theme || "a");
-        node.properties.theme = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+        const cur = resolveTheme(node.properties.theme).id;
+        const idx = Math.max(0, THEME_ORDER.indexOf(cur));
+        const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+        node.properties.theme = next;
+        saveSharedThemeKey(next);
         build();
+        try { node.setDirtyCanvas(true, true); } catch { /* */ }
       };
       container.querySelector("#lfld-add").onclick = () => {
         const d = getData(); d.push({ on: true, lora: "None", str: 1.0, vs: 1.0, as: 1.0 });

@@ -4,13 +4,26 @@
 import { app } from "../../scripts/app.js";
 import { buildResMaster, LTX_AR_PRESETS } from "./res_master.js";
 import { buildImageCarousel } from "./image_carousel.js";
+import {
+  THEMES as SHARED_THEMES,
+  THEME_KEYS,
+  resolveTheme,
+  themeOptionsHtml,
+  loadSharedThemeKey,
+  saveSharedThemeKey,
+} from "./themes_ld.js";
 
 const HIDE = [
   "model_file", "mmproj_file", "video_mode", "environment", "scenario",
-  "camera_move", "music", "pov", "pov_gender", "dialogue_tier", "intensity",
-  "user_intent", "confirmed_prompt",
+  "camera_move", "music", "pov", "pov_gender", "dialogue_tier", "cast",
+  "lead_gender", "video_style", "accent_mode", "accent_partner", "intensity",
+  "motion_level", "mouth_heat",
+  "user_intent", "confirmed_prompt", "continuity_state",
   "image_b64", "image_filename", "rm_w", "rm_h", "duration_s", "fps",
 ];
+
+const HISTORY_KEY = "pfld_history_v2";
+const HISTORY_MAX = 24;
 
 const LTX_SNAP = Object.fromEntries(
   LTX_AR_PRESETS.map(([, aw, ah, , sw, sh]) => [`${aw}:${ah}`, [sw, sh]])
@@ -37,53 +50,20 @@ const LAYOUT = {
   heroStageW: 135,
   heroMinH: 210,
   floorMin: 680,
+  // Node shell — default tall so Intent + Generate are visible; min is free-drag floor
+  defaultNodeW: 920,
+  defaultNodeH: 1400,
+  minNodeH: 720,   // corner-drag can shrink to this (content scrolls inside)
+  maxNodeH: 2400,
 };
 
 let _debugPad = null; // for the temp UI padding debug in cog
 let _debugLayout = null; // layout sizes exposed in cog for live resize tweaks (no bars)
 
-const THEMES = {
-  default: {
-    '--bg': '#07040e',
-    '--text': '#f0ebff',
-    '--muted': '#7d7394',
-    '--gold': '#ffc857',
-    '--cyan': '#5ce1e6',
-    '--violet': '#a855f7',
-  },
-  midnight: {
-    '--bg': '#040308',
-    '--text': '#d8d0e8',
-    '--muted': '#5a5270',
-    '--gold': '#d8a850',
-    '--cyan': '#48a8b4',
-    '--violet': '#7a38c0',
-  },
-  terminal: {
-    '--bg': '#081208',
-    '--text': '#a8d0a8',
-    '--muted': '#557055',
-    '--gold': '#c8a060',
-    '--cyan': '#48b868',
-    '--violet': '#608060',
-  },
-  neon: {
-    '--bg': '#080410',
-    '--text': '#f0e8ff',
-    '--muted': '#806890',
-    '--gold': '#ffcc66',
-    '--cyan': '#66f0ff',
-    '--violet': '#cc66ff',
-  },
-  warm: {
-    '--bg': '#110c08',
-    '--text': '#f0e0c8',
-    '--muted': '#7a6650',
-    '--gold': '#ffaa44',
-    '--cyan': '#908060',
-    '--violet': '#b07050',
-  }
-};
+/** Flatten shared themes → CSS vars map (PromptForge panel). */
+const THEMES = Object.fromEntries(
+  THEME_KEYS.map((k) => [k, SHARED_THEMES[k].pf])
+);
 
 function ensureStyles() {
   const ID = "pfld-styles";
@@ -98,7 +78,285 @@ function ensureStyles() {
     // Fallback for ComfyUI asset serving
     link.href = "/extensions/PromptForgeLD/js/prompt_forge.css";
   }
+  // Bust cache when LoRA triggers / header seed ship
+  link.href += (link.href.includes("?") ? "&" : "?") + "v=loratrig1";
   document.head.appendChild(link);
+}
+
+/**
+ * Custom tooltips — native `title` rarely shows inside Comfy LiteGraph DOM widgets.
+ * Use data-tip="…" on elements. Also migrates existing title → data-tip.
+ */
+// Style options: hover shows what they do + a tiny example intent
+const STYLE_PICKS = [
+  {
+    v: "None — off (no style path)",
+    short: "None — off",
+    tip: "No style path — zero extra tokens. Your intent only.",
+  },
+  {
+    v: "✨ Gravure — slow body tease (close & personal)",
+    short: "✨ Gravure — slow body tease",
+    tip: "Sexy lingerie / sheer · soft Asian idol slow tease.\n\nEx: a Korean woman in red sheer lingerie by a window",
+  },
+  {
+    v: "📱 Handheld phone vlog — arm's-length selfie",
+    short: "📱 Handheld phone vlog",
+    tip: "Selfie phone · talk to the lens while doing stuff.\n\nEx: girl shows her messy kitchen morning coffee",
+  },
+  {
+    v: "👻 Horror — dread & unease",
+    short: "👻 Horror",
+    tip: "Dread path · invents scary beats around your place.\n\nEx: a woman alone in a foggy graveyard",
+  },
+  {
+    v: "🎵 Music-video performance",
+    short: "🎵 Music-video performance",
+    tip: "Performance clip · hooks the Music dropdown groove.\n\nEx: dancer in neon alley hits the chorus",
+  },
+  {
+    v: "🎞 Found-footage / security cam energy",
+    short: "🎞 Found footage",
+    tip: "Security / camcorder energy · observational.\n\nEx: hallway cam catches someone at 3am",
+  },
+  {
+    v: "☕ Slice-of-life cinema",
+    short: "☕ Slice of life",
+    tip: "Quiet realism · props and small stakes.\n\nEx: couple miss the last bus in the rain",
+  },
+  {
+    v: "👗 Fashion editorial / lookbook",
+    short: "👗 Fashion editorial",
+    tip: "Lookbook path · garment and pose are the star.\n\nEx: model in a black coat on wet marble steps",
+  },
+  {
+    v: "🎤 Late-night confessional",
+    short: "🎤 Late-night confessional",
+    tip: "Soft lamp · private talk to the view.\n\nEx: she apologises alone on her bed at 2am",
+  },
+  {
+    v: "🏃 Athletic / training diary",
+    short: "🏃 Athletic training",
+    tip: "Gym kit · sweat · form and reps.\n\nEx: woman finishes deadlift sets in a night gym",
+  },
+  {
+    v: "🌃 Night-drive / neon city",
+    short: "🌃 Night drive / neon",
+    tip: "Car + neon · late city mood.\n\nEx: man drives wet neon streets after midnight",
+  },
+  {
+    v: "😌 Soft romance",
+    short: "😌 Soft romance",
+    tip: "Tender pair · closeness, almost-kiss energy.\n\nEx: they share an umbrella after the cinema",
+  },
+  {
+    v: "🔥 Explicit heat — slow filth",
+    short: "🔥 Explicit heat — slow filth",
+    tip: "Adult slow heat · lingerie-to-skin, mechanism-first.\n\nEx: hotel room, she peels a silk slip for him",
+  },
+  {
+    v: "⛓ BDSM power exchange",
+    short: "⛓ BDSM power exchange",
+    tip: "Dom/sub path · collar/leather · command voice.\nPairs with POV Mistress / POV Sub recipes.\n\nEx: she orders him to kneel; collar tug; cool yes-Ma'am",
+  },
+];
+
+/**
+ * Custom tooltips — native `title` is flaky in Comfy node DOM.
+ * Use data-tip="…" on labels/chips/buttons (not textareas / res master).
+ */
+function wireTooltips(root) {
+  if (!root || root._pfldTipsWired) return;
+  root._pfldTipsWired = true;
+
+  let tip = document.getElementById("pfld-float-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "pfld-float-tip";
+    tip.className = "pfld-float-tip";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+  }
+
+  // Migrate native title → data-tip (skip textareas / res master zone)
+  root.querySelectorAll("[title]").forEach((el) => {
+    if (el.closest?.("#gpl-res") || el.matches?.("textarea")) {
+      el.removeAttribute("title");
+      return;
+    }
+    const t = (el.getAttribute("title") || "").trim();
+    if (t && !el.getAttribute("data-tip")) el.setAttribute("data-tip", t);
+    el.removeAttribute("title");
+  });
+
+  let hideTimer = null;
+  let activeEl = null;
+
+  const place = (e) => {
+    if (!tip.classList.contains("on")) return;
+    const pad = 14;
+    const tw = tip.offsetWidth || 220;
+    const th = tip.offsetHeight || 48;
+    let x = e.clientX + pad;
+    let y = e.clientY + pad;
+    if (x + tw > window.innerWidth - 8) x = Math.max(8, e.clientX - tw - pad);
+    if (y + th > window.innerHeight - 8) y = Math.max(8, e.clientY - th - pad);
+    tip.style.left = `${Math.round(x)}px`;
+    tip.style.top = `${Math.round(y)}px`;
+  };
+
+  const show = (el, e) => {
+    if (el.closest?.("#gpl-res") || el.matches?.("textarea")) return;
+    const text = (el.getAttribute("data-tip") || "").trim();
+    if (!text) return;
+    clearTimeout(hideTimer);
+    activeEl = el;
+    tip.textContent = text;
+    tip.classList.add("on");
+    place(e);
+  };
+
+  const hide = () => {
+    hideTimer = setTimeout(() => {
+      tip.classList.remove("on");
+      activeEl = null;
+    }, 60);
+  };
+
+  root.addEventListener("pointerover", (e) => {
+    const el = e.target?.closest?.("[data-tip]");
+    if (!el || !root.contains(el)) return;
+    if (el.closest?.("#gpl-res") || el.matches?.("textarea")) return;
+    show(el, e);
+  }, true);
+
+  root.addEventListener("pointermove", (e) => {
+    if (activeEl) place(e);
+  }, true);
+
+  root.addEventListener("pointerout", (e) => {
+    const el = e.target?.closest?.("[data-tip]");
+    if (!el) return;
+    const to = e.relatedTarget;
+    if (to && el.contains(to)) return;
+    if (to && to.closest && to.closest("[data-tip]") === el) return;
+    hide();
+  }, true);
+
+  // Don't kill tip on every click inside style menu (hover tips while browsing)
+  root.addEventListener("pointerdown", (e) => {
+    if (e.target?.closest?.(".gpl-style-menu")) return;
+    tip.classList.remove("on");
+    activeEl = null;
+  }, true);
+}
+
+/** Custom Style picker so each option can show a rich hover tip (native <option> cannot). */
+function wireStylePicker(root) {
+  const sel = root.querySelector("#gpl-style");
+  const btn = root.querySelector("#gpl-style-btn");
+  const menu = root.querySelector("#gpl-style-menu");
+  if (!sel || !btn || !menu) return;
+
+  // Hidden native select keeps .value working for generate body
+  sel.innerHTML = "";
+  sel.classList.add("gpl-style-native");
+  STYLE_PICKS.forEach((p) => {
+    const o = document.createElement("option");
+    o.value = p.v;
+    o.textContent = p.short;
+    sel.appendChild(o);
+  });
+
+  menu.innerHTML = "";
+  STYLE_PICKS.forEach((p) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "gpl-style-opt";
+    b.dataset.v = p.v;
+    b.setAttribute("data-tip", p.tip);
+    b.textContent = p.short;
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sel.value = p.v;
+      btn.textContent = p.short;
+      btn.setAttribute("data-tip", p.tip);
+      menu.querySelectorAll(".gpl-style-opt").forEach((o) => {
+        o.classList.toggle("on", o.dataset.v === p.v);
+      });
+      menu.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    menu.appendChild(b);
+  });
+
+  const syncBtn = () => {
+    const pick = STYLE_PICKS.find((p) => p.v === sel.value) || STYLE_PICKS[0];
+    if (sel.value !== pick.v) sel.value = pick.v;
+    btn.textContent = pick.short;
+    btn.setAttribute("data-tip", pick.tip);
+    menu.querySelectorAll(".gpl-style-opt").forEach((o) => {
+      o.classList.toggle("on", o.dataset.v === pick.v);
+    });
+  };
+  syncBtn();
+  // If something sets sel.value later, keep button in sync
+  sel.addEventListener("change", syncBtn);
+
+  // Park menu on body so Comfy node overflow/transform never clips it
+  if (menu.parentElement !== document.body) {
+    document.body.appendChild(menu);
+  }
+
+  const placeMenu = () => {
+    const r = btn.getBoundingClientRect();
+    const maxH = Math.min(280, window.innerHeight - r.bottom - 12);
+    menu.style.position = "fixed";
+    menu.style.left = `${Math.round(r.left)}px`;
+    menu.style.width = `${Math.round(Math.max(160, r.width))}px`;
+    menu.style.top = `${Math.round(r.bottom + 4)}px`;
+    menu.style.right = "auto";
+    menu.style.bottom = "auto";
+    menu.style.maxHeight = `${Math.max(120, maxH)}px`;
+    if (maxH < 140 && r.top > 160) {
+      menu.style.top = "auto";
+      menu.style.bottom = `${Math.round(window.innerHeight - r.top + 4)}px`;
+      menu.style.maxHeight = `${Math.min(280, r.top - 12)}px`;
+    }
+  };
+
+  const closeMenu = () => {
+    menu.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const willOpen = !menu.classList.contains("open");
+    if (willOpen) {
+      placeMenu();
+      menu.classList.add("open");
+      btn.setAttribute("aria-expanded", "true");
+    } else {
+      closeMenu();
+    }
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.classList.contains("open")) return;
+    if (menu.contains(e.target) || btn.contains(e.target)) return;
+    closeMenu();
+  }, true);
+
+  window.addEventListener("resize", () => {
+    if (menu.classList.contains("open")) placeMenu();
+  });
+
+  // Expose helper for restoreSession
+  sel._pfldSyncStyleBtn = syncBtn;
 }
 
 function hideWidget(w) {
@@ -148,6 +406,122 @@ app.registerExtension({
     let draftPrompt = "", generating = false, abortCtrl = null;
     let povMode = localStorage.getItem("pfld_pov") || "off";
     let dlgTier = localStorage.getItem("pfld_dlg") || "standard";
+    let castMode = localStorage.getItem("pfld_cast") || "pair";
+    let leadGender = localStorage.getItem("pfld_lead") || "auto";
+    let accentMode = localStorage.getItem("pfld_accent") || "auto";
+    let accentPartner = localStorage.getItem("pfld_accent_partner") || "off";
+    let motionLevel = localStorage.getItem("pfld_motion") || "normal";
+    let mouthHeat = localStorage.getItem("pfld_mouth") || "normal";
+    let keepWarm = localStorage.getItem("pfld_keep_warm") === "1";
+    let carryNext = localStorage.getItem("pfld_carry") !== "0"; // default on
+    let detailerOn = localStorage.getItem("pfld_detailer") === "1"; // default off (zero tokens)
+    // Post-repair scrub (CANON head/torso, silent strip, facing jump…). Default ON.
+    let repairOn = localStorage.getItem("pfld_repair") !== "0";
+    // Self-check QA pass (extra LLM pass). Default OFF — optional polish.
+    let selfCheckOn = localStorage.getItem("pfld_self_check") === "1";
+    let selfCheckMode = (localStorage.getItem("pfld_self_check_mode") || "fix").toLowerCase();
+    if (selfCheckMode !== "report" && selfCheckMode !== "fix") selfCheckMode = "fix";
+    const SELF_CHECK_CHIPS = [
+      { id: "intent_beats", label: "Intent beats" },
+      { id: "i2v_lock", label: "I2V lock" },
+      { id: "talk_floor", label: "Enough talk" },
+      { id: "silent_ok", label: "Silent clean" },
+      { id: "pov_clean", label: "POV clean" },
+      { id: "body_unit", label: "Body unit" },
+      { id: "hard_triggers", label: "LoRA triggers" },
+      { id: "camera_alive", label: "Camera hunts" },
+      { id: "no_meta", label: "No meta" },
+      { id: "sections", label: "Sections" },
+      { id: "gravure_voice", label: "Gravure voice" },
+    ];
+    const SELF_CHECK_DEFAULT = ["intent_beats", "talk_floor", "body_unit", "sections", "no_meta"];
+    let selfCheckChips = (() => {
+      try {
+        const raw = localStorage.getItem("pfld_self_check_chips");
+        if (raw) {
+          const a = JSON.parse(raw);
+          if (Array.isArray(a) && a.length) return a.filter((id) => SELF_CHECK_CHIPS.some((c) => c.id === id));
+        }
+      } catch { /* */ }
+      return SELF_CHECK_DEFAULT.slice();
+    })();
+    // Seed modes: random (new each gen) · fixed (same) · increment (+1 each gen)
+    let seedMode = (localStorage.getItem("pfld_seed_mode") || "").toLowerCase();
+    if (!["random", "fixed", "increment"].includes(seedMode)) {
+      // migrate old lock checkbox
+      seedMode = localStorage.getItem("pfld_seed_lock") === "1" ? "fixed" : "random";
+    }
+    let lastSeed = parseInt(localStorage.getItem("pfld_seed") || "0", 10);
+    if (!Number.isFinite(lastSeed) || lastSeed < 0) lastSeed = Math.floor(Math.random() * 2147483647);
+
+    function paintSeedUI() {
+      const val = String(lastSeed >>> 0);
+      container.querySelectorAll("#gpl-seed, #gpl-seed-hd").forEach((el) => {
+        if (el && document.activeElement !== el) el.value = val;
+      });
+      container.querySelectorAll(".gpl-seed-mode-btn").forEach((b) => {
+        b.classList.toggle("on", b.dataset.mode === seedMode);
+      });
+      const lab = $("#gpl-seed-mode-lab");
+      if (lab) {
+        lab.textContent = seedMode === "fixed" ? "fixed" : seedMode === "increment" ? "+1" : "rand";
+      }
+    }
+    function setSeedMode(mode) {
+      if (!["random", "fixed", "increment"].includes(mode)) return;
+      seedMode = mode;
+      try { localStorage.setItem("pfld_seed_mode", seedMode); } catch { /* */ }
+      // keep legacy key in sync for older logic
+      try { localStorage.setItem("pfld_seed_lock", seedMode === "fixed" ? "1" : "0"); } catch { /* */ }
+      paintSeedUI();
+    }
+    function rollSeed() {
+      lastSeed = Math.floor(Math.random() * 2147483647);
+      try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+      paintSeedUI();
+      return lastSeed;
+    }
+    function readSeed() {
+      const n = parseInt($("#gpl-seed-hd")?.value ?? $("#gpl-seed")?.value, 10);
+      if (Number.isFinite(n) && n >= 0) {
+        lastSeed = n >>> 0;
+        try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+        paintSeedUI();
+        return lastSeed;
+      }
+      return rollSeed();
+    }
+    /** random → new seed · fixed → keep · increment → last+1 */
+    function seedForGenerate() {
+      const modeBtn = container.querySelector(".gpl-seed-mode-btn.on");
+      if (modeBtn?.dataset?.mode) seedMode = modeBtn.dataset.mode;
+      if (seedMode === "fixed") return readSeed();
+      if (seedMode === "increment") {
+        lastSeed = ((readSeed() + 1) >>> 0);
+        try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+        paintSeedUI();
+        return lastSeed;
+      }
+      return rollSeed();
+    }
+    let localDur = parseFloat(localStorage.getItem("pfld_dur") || "12") || 12;
+    const INTENSITY_LEVELS = [
+      { k: "asmr", lab: "ASMR" },
+      { k: "soft", lab: "Soft" },
+      { k: "normal", lab: "Normal" },
+      { k: "intense", lab: "Intense" },
+      { k: "aggressive", lab: "Aggressive" },
+    ];
+    const levelToEnergy = (k) => ({ asmr: 2, soft: 3, normal: 5, intense: 7, aggressive: 10 }[k] || 5);
+    const energyToLevel = (n) => {
+      const v = parseInt(n, 10) || 5;
+      if (v <= 2) return "asmr";
+      if (v <= 3) return "soft";
+      if (v <= 6) return "normal";
+      if (v <= 8) return "intense";
+      return "aggressive";
+    };
+    let lastContinuity = (gw("continuity_state")?.value || "").trim();
     let rmW = 720, rmH = 1280, resScale = 1.0;
     let resMaster = null, imageCarousel = null;
     let videoMode = gw("video_mode")?.value || localStorage.getItem("pfld_video_mode") || "i2v";
@@ -171,114 +545,393 @@ app.registerExtension({
 
     ensureStyles();
     container.innerHTML = `
-<!-- TOP: toggles + dropdowns -->
+<!-- TOP: header + controls in colour sections -->
 <div class="gpl-zone gpl-top">
-  <div class="gpl-row-spread">
-    <span class="gpl-title">✦ PromptForge LD</span>
-    <span class="gpl-badge" id="gpl-live">—</span>
-    <button type="button" class="gpl-cog" id="gpl-cog" title="LLM connection only">⚙</button>
-  </div>
-  <div class="gpl-row">
-    <div class="gpl-tabs" id="gpl-mode-tabs">
-      <button type="button" class="gpl-tab on" data-mode="i2v">I2V</button>
-      <button type="button" class="gpl-tab" data-mode="t2v">T2V</button>
+  <div class="gpl-row-spread gpl-header">
+    <div class="gpl-header-left">
+      <span class="gpl-title" data-tip="LTX 2.3 shot writer — builds timed multi-section scripts for video">✦ PromptForge LD</span>
+      <span class="gpl-badge" id="gpl-live" data-tip="Duration · fps · cast (from slider or wired inputs)">—</span>
+    </div>
+    <div class="gpl-header-right">
+      <div class="gpl-seed-strip" data-tip="Seed for LLM + Random scenario/env. Random = new each Generate · Fixed = same · +1 = increment">
+        <span class="gpl-seed-lbl">Seed</span>
+        <div class="gpl-seed-modes" id="gpl-seed-modes" role="group" aria-label="Seed mode">
+          <button type="button" class="gpl-seed-mode-btn" data-mode="random" data-tip="New random seed every Generate (warm re-rolls)">Rand</button>
+          <button type="button" class="gpl-seed-mode-btn" data-mode="fixed" data-tip="Keep this seed — reproduce a script">Fixed</button>
+          <button type="button" class="gpl-seed-mode-btn" data-mode="increment" data-tip="Add 1 to the seed each Generate">+1</button>
+        </div>
+        <input type="number" id="gpl-seed-hd" class="gpl-seed-num" min="0" max="2147483647" step="1" value="0" data-tip="Current seed number">
+        <button type="button" id="gpl-seed-roll-hd" class="gpl-seed-dice" data-tip="Roll a new random seed now">🎲</button>
+      </div>
+      <button type="button" class="gpl-cog" id="gpl-cog" data-tip="Settings: LLM server, model, theme, node size">⚙</button>
     </div>
   </div>
-  <div class="gpl-chips">
-    <div class="gpl-chipgrp" id="gpl-dlg">
-      <button type="button" class="gpl-chip" data-v="none">Silent</button>
-      <button type="button" class="gpl-chip on" data-v="standard">Standard</button>
-      <button type="button" class="gpl-chip rose" data-v="talkative">Talkative</button>
+
+  <!-- Row A: SHOT (full) — mode + chips + energy inline where possible -->
+  <div class="gpl-sec gpl-sec-shot">
+    <div class="gpl-sec-head"><span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Shot setup: video mode, dialogue density, POV, cast count">Shot</span>
+      <div class="gpl-inline gpl-dur-inline gpl-dur-head">
+        <label data-tip="Clip length in seconds (UI). Internal write is 2s shorter so the last word is not cut off.">Dur <input type="range" id="gpl-dur" min="4" max="40" step="0.5" value="12" data-tip="Drag to set clip duration (seconds)"><span class="val" id="gpl-dur-val">12s</span></label>
+      </div>
     </div>
-    <div class="gpl-chipgrp" id="gpl-pov">
-      <button type="button" class="gpl-chip pov-off on" data-v="off">Off</button>
-      <button type="button" class="gpl-chip pov-f" data-v="female">POV ♀</button>
-      <button type="button" class="gpl-chip pov-m" data-v="male">POV ♂</button>
+    <div class="gpl-shot-bar">
+      <div class="gpl-tabs" id="gpl-mode-tabs">
+        <button type="button" class="gpl-tab on" data-mode="i2v" data-tip="Image → Video. Start frame is law. JUMP scenarios only in this mode.">I2V</button>
+        <button type="button" class="gpl-tab" data-mode="t2v" data-tip="Text → Video. Full recipes + character look seeds + video styles.">T2V</button>
+      </div>
+      <div class="gpl-chips gpl-chips-inline">
+        <div class="gpl-chip-wrap">
+          <span class="gpl-chip-lbl" data-tip="How much spoken dialogue the script must carry">Dialogue</span>
+          <div class="gpl-chipgrp" id="gpl-dlg">
+            <button type="button" class="gpl-chip" data-v="none" data-tip="Silent: no spoken lines — breath, moans, foley only">Silent</button>
+            <button type="button" class="gpl-chip on" data-v="standard" data-tip="Standard: a few natural lines where mouths are free">Standard</button>
+            <button type="button" class="gpl-chip rose" data-v="talkative" data-tip="Talkative: dense dialogue (Grok floor). Free mouths only — oral stays quiet.">Talkative</button>
+          </div>
+        </div>
+        <div class="gpl-chip-split" aria-hidden="true"></div>
+        <div class="gpl-chip-wrap">
+          <span class="gpl-chip-lbl" data-tip="Point-of-view camera: view is a body, not a floating camera">POV</span>
+          <div class="gpl-chipgrp" id="gpl-pov">
+            <button type="button" class="gpl-chip pov-off on" data-v="off" data-tip="Third-person / normal framing — no POV contract">Off</button>
+            <button type="button" class="gpl-chip pov-f" data-v="female" data-tip="Female POV: view is her eyes/body; no I/me/my in prose">POV ♀</button>
+            <button type="button" class="gpl-chip pov-m" data-v="male" data-tip="Male POV: view is his eyes/body; hands enter from bottom edge">POV ♂</button>
+          </div>
+        </div>
+        <div class="gpl-chip-split" aria-hidden="true"></div>
+        <div class="gpl-chip-wrap">
+          <span class="gpl-chip-lbl" data-tip="How many people on screen">Cast</span>
+          <div class="gpl-chipgrp" id="gpl-cast">
+            <button type="button" class="gpl-chip" data-v="solo" data-tip="One person only — no invented partner">Solo</button>
+            <button type="button" class="gpl-chip on cyan" data-v="pair" data-tip="Two people — keep identities distinct">Pair</button>
+            <button type="button" class="gpl-chip" data-v="group" data-tip="Three or more — role tags, focus on 1–2 bodies per section">Group</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="gpl-fields">
-    <div class="gpl-field"><label>Camera</label><select id="gpl-cam"></select></div>
-    <div class="gpl-field">
-      <label>Scenario</label>
-      <select id="gpl-scn"></select>
-      <button type="button" id="gpl-edit-scn" title="Edit current scenario" style="margin-left:4px;padding:2px 6px;font-size:11px;border-radius:4px;border:1px solid rgba(168,85,247,.4);background:rgba(168,85,247,.1);color:#a855f7;cursor:pointer;">✎</button>
+
+  <!-- Row B: SCENE | VOICE side by side -->
+  <div class="gpl-pair-row">
+    <div class="gpl-sec gpl-sec-scene">
+      <div class="gpl-sec-head">
+        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Where / what structure: camera, scenario, place, music, lead, video style">Scene</span>
+        <label class="gpl-check gpl-check-inline" data-tip="Detailer: skin texture + lighting + max 1 new visual detail per section. Off = zero tokens. Helps I2V keep start-image skin."><input type="checkbox" id="gpl-detailer"> Detailer</label>
+      </div>
+      <div class="gpl-fields gpl-fields-3-tight">
+        <div class="gpl-field"><label data-tip="Camera move preset (dolly, orbit…). Separate from Video Style.">Camera</label><select id="gpl-cam" data-tip="Optional camera motion language for the script"></select></div>
+        <div class="gpl-field">
+          <label id="gpl-scn-label" data-tip="I2V: JUMP cuts only. T2V: deep shot recipes. None = your intent only.">Scenario</label>
+          <div class="gpl-field-row">
+            <select id="gpl-scn" data-tip="Structure / choreography bank for this mode"></select>
+            <button type="button" id="gpl-edit-scn" class="gpl-icon-btn" data-tip="Edit this scenario's setup & choreography (saves to disk)">✎</button>
+          </div>
+        </div>
+        <div class="gpl-field"><label data-tip="Location / set dressing block">Environment</label><select id="gpl-env" data-tip="Where the clip happens — lighting, props, atmosphere"></select></div>
+        <div class="gpl-field"><label data-tip="Soundtrack groove. Music-video Style hard-hooks this.">Music</label><select id="gpl-music" data-tip="Music / soundtrack preset. Pairs with Music-video style."></select></div>
+        <div class="gpl-field"><label data-tip="Who the primary subject is (she/he/they)">Lead</label>
+          <select id="gpl-lead" data-tip="Lead gender for identity lines and accent profiles">
+            <option value="auto">Auto (intent)</option>
+            <option value="female">Female lead</option>
+            <option value="male">Male lead</option>
+            <option value="neutral">Neutral / they</option>
+          </select>
+        </div>
+        <div class="gpl-field gpl-style-field">
+          <label data-tip="Video genre path (not a camera). Hover each style for what it does + an example.">Style</label>
+          <div class="gpl-style-wrap">
+            <button type="button" class="gpl-style-btn" id="gpl-style-btn" aria-haspopup="listbox" aria-expanded="false" data-tip="Click to pick a video style — hover each row for a short example">None — off</button>
+            <div class="gpl-style-menu" id="gpl-style-menu" role="listbox"></div>
+            <select id="gpl-style" class="gpl-style-native" aria-hidden="true" tabindex="-1"></select>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="gpl-field"><label>Environment</label><select id="gpl-env"></select></div>
+
+    <div class="gpl-sec gpl-sec-voice">
+      <div class="gpl-sec-head">
+        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Accents + continuity carry — how people sound">Voice</span>
+        <label class="gpl-check gpl-check-inline" data-tip="Carry wardrobe/pose state into the next Generate (continuity)"><input type="checkbox" id="gpl-carry" checked> Carry</label>
+        <button type="button" id="gpl-carry-clear" class="gpl-icon-btn" data-tip="Clear stored continuity (fresh wardrobe/pose next Generate)" style="margin-left:2px;font-size:10px;padding:2px 6px" title="Clear continuity">✕</button>
+      </div>
+      <div class="gpl-fields gpl-fields-stack">
+        <div class="gpl-field"><label data-tip="Lead speaker accent. T2V also seeds matching look (Scottish freckles ≠ Korean face).">Accent · Lead</label>
+          <select id="gpl-accent" data-tip="Accent lock for lead: grammar + voice line + look seed (T2V)">
+            <option value="auto">Auto (from intent)</option>
+            <option value="off">Off</option>
+            <optgroup label="UK / Ireland">
+              <option value="cockney">Cockney (London)</option>
+              <option value="scottish">Scottish</option>
+              <option value="irish">Irish</option>
+              <option value="scouse">Scouse (Liverpool)</option>
+              <option value="geordie">Geordie (Newcastle)</option>
+              <option value="northern_english">Northern English</option>
+              <option value="welsh">Welsh English</option>
+              <option value="rp_british">RP / Southern British</option>
+            </optgroup>
+            <optgroup label="Europe">
+              <option value="french">French</option>
+              <option value="german">German</option>
+              <option value="spanish_latin">Spanish (Latin)</option>
+              <option value="spanish_castilian">Spanish (Spain)</option>
+              <option value="italian">Italian</option>
+              <option value="portuguese">Portuguese</option>
+              <option value="dutch">Dutch</option>
+              <option value="russian">Russian</option>
+              <option value="polish">Polish</option>
+              <option value="czech">Czech</option>
+              <option value="swedish">Swedish</option>
+              <option value="norwegian">Norwegian</option>
+              <option value="greek">Greek</option>
+            </optgroup>
+            <optgroup label="Asia">
+              <option value="korean">Korean</option>
+              <option value="japanese">Japanese</option>
+              <option value="mandarin">Mandarin</option>
+              <option value="thai">Thai</option>
+              <option value="vietnamese">Vietnamese</option>
+              <option value="indian_english">Indian English</option>
+            </optgroup>
+            <optgroup label="Caribbean (listen)">
+              <option value="jamaican_rasta">Jamaican / Rasta</option>
+              <option value="trinidadian">Trinidadian / Trini</option>
+            </optgroup>
+            <optgroup label="Africa">
+              <option value="nigerian_english">Nigerian English (Naija)</option>
+              <option value="ghanaian_english">Ghanaian English</option>
+              <option value="south_african_english">South African English</option>
+              <option value="swahili">Swahili / East African</option>
+            </optgroup>
+            <optgroup label="Other English">
+              <option value="australian">Australian</option>
+              <option value="new_zealand">New Zealand / Kiwi</option>
+              <option value="southern_us">Southern US</option>
+              <option value="filipino_english">Filipino English</option>
+            </optgroup>
+            <optgroup label="Middle East">
+              <option value="arabic">Arabic</option>
+              <option value="hebrew">Hebrew</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="gpl-field"><label data-tip="Second speaker's accent (pair scenes). Stays distinct from lead.">Accent · Partner</label>
+          <select id="gpl-accent-partner" data-tip="Partner accent lock — never blend mid-line with lead">
+            <option value="off">Off / same as lead</option>
+            <option value="auto">Auto</option>
+            <optgroup label="UK / Ireland">
+              <option value="cockney">Cockney</option>
+              <option value="scottish">Scottish</option>
+              <option value="irish">Irish</option>
+              <option value="scouse">Scouse</option>
+              <option value="geordie">Geordie</option>
+              <option value="northern_english">Northern English</option>
+              <option value="welsh">Welsh</option>
+              <option value="rp_british">RP British</option>
+            </optgroup>
+            <optgroup label="Europe">
+              <option value="french">French</option>
+              <option value="german">German</option>
+              <option value="spanish_latin">Spanish (Latin)</option>
+              <option value="spanish_castilian">Spanish (Spain)</option>
+              <option value="italian">Italian</option>
+              <option value="portuguese">Portuguese</option>
+              <option value="dutch">Dutch</option>
+              <option value="russian">Russian</option>
+              <option value="polish">Polish</option>
+              <option value="czech">Czech</option>
+              <option value="swedish">Swedish</option>
+              <option value="norwegian">Norwegian</option>
+              <option value="greek">Greek</option>
+            </optgroup>
+            <optgroup label="Asia">
+              <option value="korean">Korean</option>
+              <option value="japanese">Japanese</option>
+              <option value="mandarin">Mandarin</option>
+              <option value="thai">Thai</option>
+              <option value="vietnamese">Vietnamese</option>
+              <option value="indian_english">Indian English</option>
+            </optgroup>
+            <optgroup label="Caribbean (listen)">
+              <option value="jamaican_rasta">Jamaican / Rasta</option>
+              <option value="trinidadian">Trinidadian / Trini</option>
+            </optgroup>
+            <optgroup label="Africa">
+              <option value="nigerian_english">Nigerian English</option>
+              <option value="ghanaian_english">Ghanaian English</option>
+              <option value="south_african_english">South African English</option>
+              <option value="swahili">Swahili / East African</option>
+            </optgroup>
+            <optgroup label="Other English">
+              <option value="australian">Australian</option>
+              <option value="new_zealand">New Zealand / Kiwi</option>
+              <option value="southern_us">Southern US</option>
+              <option value="filipino_english">Filipino English</option>
+            </optgroup>
+            <optgroup label="Middle East">
+              <option value="arabic">Arabic</option>
+              <option value="hebrew">Hebrew</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="gpl-field" style="margin: 4px 0;">
-    <label>Music / Soundtrack</label>
-    <select id="gpl-music"></select>
-  </div>
-  <div class="gpl-inline">
-    <label>Intensity <input type="range" id="gpl-int" min="1" max="10" value="5"><span class="val" id="gpl-int-val">5 · medium</span></label>
+
+  <!-- Row C: ENERGY full width but single compact row -->
+  <div class="gpl-sec gpl-sec-energy">
+    <div class="gpl-sec-head gpl-sec-head-inline">
+      <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Two independent axes: Body motion force ≠ Mouth / dialogue heat">Energy</span>
+      <div class="gpl-intensity-inline">
+        <span class="gpl-energy-lbl-sm" data-tip="How hard the body moves (ASMR soft → aggressive slam)">Body</span>
+        <div class="gpl-chipgrp" id="gpl-motion">
+          <button type="button" class="gpl-chip" data-v="asmr" data-tip="Body: micro motion, whisper-scale movement">ASMR</button>
+          <button type="button" class="gpl-chip" data-v="soft" data-tip="Body: gentle continuous motion">Soft</button>
+          <button type="button" class="gpl-chip on" data-v="normal" data-tip="Body: natural everyday force">Normal</button>
+          <button type="button" class="gpl-chip" data-v="intense" data-tip="Body: strong, forceful motion">Intense</button>
+          <button type="button" class="gpl-chip rose" data-v="aggressive" data-tip="Body: hard, aggressive physical energy">Aggressive</button>
+        </div>
+        <span class="gpl-energy-lbl-sm" data-tip="How filthy / heated the dialogue is (independent of body)">Mouth</span>
+        <div class="gpl-chipgrp" id="gpl-mouth">
+          <button type="button" class="gpl-chip" data-v="asmr" data-tip="Mouth: soft whispers, almost no filth">ASMR</button>
+          <button type="button" class="gpl-chip" data-v="soft" data-tip="Mouth: gentle warm talk">Soft</button>
+          <button type="button" class="gpl-chip on" data-v="normal" data-tip="Mouth: natural heat">Normal</button>
+          <button type="button" class="gpl-chip" data-v="intense" data-tip="Mouth: dirty / heated dialect">Intense</button>
+          <button type="button" class="gpl-chip rose" data-v="aggressive" data-tip="Mouth: full filth / degradation band (when explicit)">Aggressive</button>
+        </div>
+        <input type="hidden" id="gpl-int" value="5">
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- MIDDLE: image hero -->
-<div class="gpl-zone gpl-mid" id="gpl-mid">
+<div class="gpl-zone gpl-mid gpl-sec-media" id="gpl-mid">
+  <div class="gpl-sec-head gpl-sec-head-media"><span class="gpl-sec-dot"></span><span class="gpl-sec-title">Frame</span></div>
   <div id="gpl-res"></div>
   <div class="gpl-folder">
     <input id="gpl-folder-path" placeholder="Image folder (default: ComfyUI/input)" spellcheck="false">
-    <button type="button" id="gpl-folder-apply">Apply</button>
+    <button type="button" id="gpl-folder-apply" data-tip="Load images from this folder into the carousel">Apply</button>
   </div>
 </div>
 
 <!-- BOTTOM: intent → output -->
 <div class="gpl-zone gpl-bot">
-  <div>
-    <div class="gpl-lbl" style="color:var(--gold)">Intent</div>
-    <textarea class="gpl-prompt gpl-intent" id="gpl-intent" placeholder="What happens in this clip…"></textarea>
+  <div class="gpl-write-col">
+    <div class="gpl-lbl-row">
+      <div class="gpl-lbl gpl-lbl-intent">Intent</div>
+    </div>
+    <div class="gpl-lora-trig-row" data-tip="Activation keywords for LoRAs on the graph (e.g. grwth). Kept out of free intent; injected into the writer + guaranteed in the final script if missing.">
+      <label class="gpl-lora-trig-lbl" for="gpl-lora-trig">LoRA triggers</label>
+      <input type="text" id="gpl-lora-trig" class="gpl-lora-trig" placeholder="short tags only — e.g. grwth   (put growth description in Intent below)" spellcheck="false" autocomplete="off">
+    </div>
+    <textarea class="gpl-prompt gpl-intent" id="gpl-intent" placeholder="What happens… e.g. she grows rapidly into a giantess, steps out of the car…"></textarea>
   </div>
 
-  <div style="flex:1;display:flex;flex-direction:column">
-    <div class="gpl-lbl" style="color:var(--violet)">LTX Script</div>
-    <textarea class="gpl-prompt gpl-out" id="gpl-out" placeholder="Generate fills here…"></textarea>
-    <div class="gpl-actions" style="margin-top:8px">
-      <button type="button" class="gpl-btn-prev" id="gpl-preview" title="Show assembled LLM prompt before generate">Preview</button>
-      <button type="button" class="gpl-btn-prev" id="gpl-copy" title="Copy LTX script">Copy</button>
-      <button type="button" class="gpl-btn gpl-btn-gen" id="gpl-gen">Generate</button>
+  <div class="gpl-write-col gpl-write-out">
+    <div class="gpl-lbl-row">
+      <div class="gpl-lbl gpl-lbl-script">LTX Script</div>
+      <select id="gpl-history" class="gpl-history" data-tip="Reload a previous generated script">
+        <option value="">History…</option>
+      </select>
     </div>
-    <div class="gpl-st" id="gpl-st"></div>
+    <textarea class="gpl-prompt gpl-out" id="gpl-out" placeholder="Generate fills here…  ·  Refine rewrites this in place"></textarea>
+    <div class="gpl-cont-strip" id="gpl-cont-strip" data-tip="Continuity (wardrobe/pose) when Carry is on">—</div>
+    <div class="gpl-actions">
+      <button type="button" class="gpl-btn-prev" id="gpl-preview" data-tip="Show the full system + user prompt the LLM would receive (no generate)">Preview</button>
+      <button type="button" class="gpl-btn-prev" id="gpl-copy" data-tip="Copy LTX script to clipboard">Copy</button>
+      <button type="button" class="gpl-btn-refine" id="gpl-refine" data-tip="Rewrite current script using Intent as the revision request">Refine</button>
+      <button type="button" class="gpl-btn gpl-btn-gen" id="gpl-gen" data-tip="Generate a new LTX script from all controls + intent">Generate</button>
+    </div>
+    <div class="gpl-st" id="gpl-st" data-tip="Status: writing, densifying, errors, elapsed"></div>
   </div>
 </div>
 
 <div class="gpl-cogpanel" id="gpl-cogpanel">
-  <div class="clbl">LLM Server <span class="gpl-conn-dot" id="gpl-conn-dot"></span></div>
+  <div class="clbl" data-tip="Where the LLM lives — Local managed, LM Studio, or Ollama">LLM Server <span class="gpl-conn-dot" id="gpl-conn-dot" data-tip="Connection status: green = healthy"></span></div>
   <div class="gpl-be-row" id="gpl-backend-row">
-    <button type="button" class="gpl-be-btn on" data-be="llama.cpp (managed)">🖥 Local<span class="gpl-be-sub">llama.cpp</span></button>
-    <button type="button" class="gpl-be-btn" data-be="LM Studio (OpenAI-compatible)">🔌 LM Studio<span class="gpl-be-sub">connect</span></button>
-    <button type="button" class="gpl-be-btn" data-be="Ollama">🦙 Ollama<span class="gpl-be-sub">connect</span></button>
+    <button type="button" class="gpl-be-btn on" data-be="llama.cpp (managed)" data-tip="Managed llama-server.exe on this machine">🖥 Local<span class="gpl-be-sub">llama.cpp</span></button>
+    <button type="button" class="gpl-be-btn" data-be="LM Studio (OpenAI-compatible)" data-tip="Connect to LM Studio OpenAI API (usually :1234)">🔌 LM Studio<span class="gpl-be-sub">connect</span></button>
+    <button type="button" class="gpl-be-btn" data-be="Ollama" data-tip="Connect to Ollama HTTP API (usually :11434)">🦙 Ollama<span class="gpl-be-sub">connect</span></button>
   </div>
-  <div class="gpl-cogrow"><input id="gpl-server-url" placeholder="http://127.0.0.1:8080"><button type="button" id="gpl-probe" title="Test connection">⟳</button></div>
+  <div class="gpl-cogrow"><input id="gpl-server-url" placeholder="http://127.0.0.1:8080" data-tip="Server base URL"><button type="button" id="gpl-probe" data-tip="Test if the LLM server is reachable">⟳</button></div>
   <div id="gpl-external-block" style="display:none">
-    <div class="clbl">Model name <span style="opacity:.55;font-weight:400">(as server reports)</span></div>
-    <input id="gpl-remote-model" placeholder="local">
+    <div class="clbl" data-tip="Model id the remote server expects">Model name <span style="opacity:.55;font-weight:400">(as server reports)</span></div>
+    <input id="gpl-remote-model" placeholder="local" data-tip="Exact model id from LM Studio / Ollama">
     <div class="gpl-ext-note" id="gpl-conn-hint">Start LM Studio with a model loaded — this only connects (model name: local or exact id).</div>
   </div>
   <div id="gpl-managed-block">
-    <div class="clbl">llama-server.exe</div>
-    <input id="gpl-llama-exe" placeholder="C:\\llama\\llama-server.exe">
-    <div class="clbl">Models folder</div>
-    <div class="gpl-cogrow"><input id="gpl-models-dir" placeholder="C:\\models"><button type="button" id="gpl-scan" title="Scan folder">⟳</button></div>
-    <div class="clbl">Model (GGUF)</div>
-    <select id="gpl-model"></select>
-    <div class="clbl">Vision mmproj</div>
-    <select id="gpl-mm"></select>
+    <div class="clbl" data-tip="Path to llama-server.exe">llama-server.exe</div>
+    <input id="gpl-llama-exe" placeholder="C:\\llama\\llama-server.exe" data-tip="Full path to llama-server executable">
+    <div class="clbl" data-tip="Folder containing GGUF models">Models folder</div>
+    <div class="gpl-cogrow"><input id="gpl-models-dir" placeholder="C:\\models" data-tip="Scan this folder for .gguf files"><button type="button" id="gpl-scan" data-tip="Rescan models folder">⟳</button></div>
+    <div class="clbl" data-tip="Text / multimodal GGUF to load">Model (GGUF)</div>
+    <select id="gpl-model" data-tip="GGUF model file for generation"></select>
+    <div class="clbl" data-tip="Vision projector for I2V image understanding">Vision mmproj</div>
+    <select id="gpl-mm" data-tip="mmproj for I2V (text-only if None)"></select>
   </div>
-  <button type="button" class="gpl-cog-save" id="gpl-save-conn">Save connection &amp; models</button>
-  <div class="clbl">Sampler temp</div>
-  <input type="number" id="gpl-temp" min="0" max="1.5" step="0.05" value="0.55">
+  <button type="button" class="gpl-cog-save" id="gpl-save-conn" data-tip="Persist server URL, backend, and model choices">Save connection &amp; models</button>
+  <div class="clbl" data-tip="LLM sampling temperature (0 = deterministic, higher = freer)">Sampler temp</div>
+  <input type="number" id="gpl-temp" min="0" max="1.5" step="0.05" value="0.55" data-tip="Temperature for script generation">
 
-  <div class="clbl" style="margin-top:8px">Theme</div>
-  <select id="gpl-theme">
-    <option value="default">Default</option>
-    <option value="midnight">Midnight</option>
-    <option value="terminal">Terminal</option>
-    <option value="neon">Neon</option>
-    <option value="warm">Warm</option>
+  <div class="clbl" style="margin-top:10px;opacity:.85" data-tip="Seed controls live in the header (Rand / Fixed / +1 + number)">Seed</div>
+  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:0 0 8px;line-height:1.4">
+    Use the <b style="color:var(--gold)">header</b> strip: <b>Rand</b> / <b>Fixed</b> / <b>+1</b> + number + 🎲.
+    Same seed drives LLM sampling, dialogue banks, and Random scenario/env.
+  </div>
+  <div class="gpl-cogrow" style="gap:6px;align-items:center;opacity:.9">
+    <input type="number" id="gpl-seed" min="0" max="2147483647" step="1" value="0" style="flex:1" data-tip="Mirrors header seed">
+    <button type="button" id="gpl-seed-roll" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;border:1px solid color-mix(in srgb,var(--violet) 40%,transparent);background:color-mix(in srgb,var(--violet) 12%,transparent);color:var(--violet);cursor:pointer;font:600 12px JetBrains Mono" data-tip="Roll a new random seed now">🎲</button>
+  </div>
+
+  <div class="clbl" style="margin-top:10px" data-tip="Keep model loaded between generates">Session</div>
+  <label class="gpl-check cog" data-tip="Skip VRAM free after generate — faster iterate, holds VRAM"><input type="checkbox" id="gpl-keep-warm"> Keep LLM warm (no free after gen)</label>
+  <label class="gpl-check cog" data-tip="After the model finishes, run CANON repair (head+torso, silent strip, facing jumps, bra path…). Turn OFF to keep raw model text so you can see what was written before repair. Streaming already shows raw; this controls the final committed script."><input type="checkbox" id="gpl-repair" checked> Post-repair scrub (final pass)</label>
+  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:0 0 8px;line-height:1.35">
+    Stream = raw tokens. When scrub is <b>on</b>, the finished box is repaired. When <b>off</b>, the box keeps raw model output.
+  </div>
+
+  <div class="clbl" style="margin-top:10px;border-top:1px solid rgba(255,200,87,.28);padding-top:10px;color:var(--gold)" data-tip="Optional extra LLM pass that grades the draft against your checklist before the box commits">✦ Self-check (optional extra pass)</div>
+  <label class="gpl-check cog" data-tip="OFF by default. When ON: after draft (+ densify/scrub), the model re-reads the script and answers your checklist. Adds a few seconds."><input type="checkbox" id="gpl-self-check"> Self-check before commit</label>
+  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:2px 0 6px;line-height:1.35">
+    Off = normal generate. On = model asks itself your questions, then either <b>fixes</b> fails or <b>reports</b> only.
+  </div>
+  <div class="gpl-inline" style="margin:4px 0;gap:8px;flex-wrap:wrap">
+    <label style="font:600 10px JetBrains Mono;color:var(--muted)">Mode</label>
+    <select id="gpl-self-check-mode" style="flex:1;min-width:10em" data-tip="Fix = rewrite fails then commit. Report = show pass/fail in status, keep draft.">
+      <option value="fix">Fix fails → commit</option>
+      <option value="report">Report only (no rewrite)</option>
+    </select>
+  </div>
+  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 4px">Checklist chips (selected = questions)</div>
+  <div id="gpl-self-check-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px"></div>
+  <div style="font:500 9px JetBrains Mono;color:#6a6080;margin:0 0 8px;line-height:1.35">
+    Auto-adds I2V / silent / POV / triggers / gravure chips from the shot. Status shows pass·fail after generate.
+  </div>
+
+  <button type="button" class="gpl-cog-save" id="gpl-kill-llm" style="margin-top:8px;background:rgba(180,40,60,.25);border-color:rgba(255,80,100,.35)" data-tip="Stop llama-server and free VRAM">Kill LLM / free VRAM</button>
+
+  <div class="clbl" style="margin-top:8px" data-tip="UI colour theme — matches LoraForge LD themes">Theme</div>
+  <select id="gpl-theme" data-tip="Shared with LoraForge — same palette names on both nodes">
+    ${themeOptionsHtml()}
   </select>
 
-  <div class="clbl" style="margin-top:12px;border-top:1px solid rgba(255,255,255,.12);padding-top:8px">Node Layout — sliders (live preview)</div>
+  <div class="clbl" style="margin-top:12px;border-top:1px solid rgba(255,200,87,.35);padding-top:10px;color:var(--gold)" data-tip="Pinned node shell — drag corner freely (grow + shrink). Default 1400, min 720.">✦ NODE SIZE (drag corner both ways)</div>
+  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:2px 0 6px;line-height:1.35">
+    Drag the node corner to grow or shrink. Size is saved; content scrolls if shorter than the UI.
+  </div>
+  <div class="gpl-inline" style="margin:4px 0">
+    <label style="min-width:4.5em">Height <span class="val" id="val-node-h">1400</span></label>
+    <input type="range" id="sl-node-h" min="720" max="2400" step="10" value="1400" style="flex:1;accent-color:#ffc857">
+  </div>
+  <div class="gpl-inline" style="margin:4px 0">
+    <label style="min-width:4.5em">Width <span class="val" id="val-node-w">920</span></label>
+    <input type="range" id="sl-node-w" min="580" max="1200" step="10" value="920" style="flex:1;accent-color:#ffc857">
+  </div>
+  <div style="display:flex;gap:6px;margin:6px 0 10px">
+    <button type="button" class="gpl-cog-save" id="gpl-apply-size" style="flex:1;font-size:11px;padding:8px">Apply size</button>
+    <button type="button" id="gpl-size-compact" style="flex:0 0 auto;padding:8px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,200,87,.35);background:rgba(255,200,87,.1);color:var(--gold);cursor:pointer" title="Reset to default 920×1400">Default size</button>
+  </div>
+
+  <div class="clbl" style="margin-top:8px;border-top:1px solid rgba(255,255,255,.12);padding-top:8px">Fine layout (optional)</div>
   <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:2px 0 3px">Insets to cyan border</div>
 
   <div class="gpl-inline" style="margin:1px 0"><label>T <span class="val" id="val-t">-7</span></label><input type="range" id="sl-t" min="-50" max="30" step="1" value="-7" style="flex:1;accent-color:#a855f7"></div>
@@ -301,7 +954,7 @@ app.registerExtension({
 
   <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Overall</div>
   <div class="gpl-inline" style="margin:1px 0"><label>Content pad <span class="val" id="val-cpad">12</span></label><input type="range" id="sl-cpad" min="2" max="28" step="1" value="12" style="flex:1;accent-color:#ffc857"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Floor min <span class="val" id="val-floor">584</span></label><input type="range" id="sl-floor" min="520" max="980" step="4" value="584" style="flex:1;accent-color:#ffc857"></div>
+  <div class="gpl-inline" style="margin:1px 0"><label title="Does NOT resize the Comfy node — use NODE SIZE above">Content pad floor <span class="val" id="val-floor">584</span></label><input type="range" id="sl-floor" min="520" max="980" step="4" value="584" style="flex:1;accent-color:#ffc857"></div>
 
   <div style="display:flex; gap:6px; margin-top:8px;">
     <button type="button" class="gpl-cog-save" id="gpl-save-layout" style="flex:1;font-size:11px;padding:7px">Save Layout</button>
@@ -351,6 +1004,9 @@ app.registerExtension({
   </div>
 </div>
 `;
+    // Custom style menu (per-option tips) + floating tooltips
+    wireStylePicker(container);
+    wireTooltips(container);
 
     const uiWidget = node.addDOMWidget("pfld_ui", "div", container, { serialize: false });
     // Debug margins (from cog) control the inset from cyan node border. rootPad is base default only.
@@ -409,7 +1065,8 @@ app.registerExtension({
         container.style.setProperty('--res-stage-w', `${sw}px`);
         container.style.setProperty('--hero-h', `${hh}px`);
         container.style.padding = `${cp}px ${cp}px ${Math.round(cp * 1.33)}px ${cp}px`;
-        if (d.floorMin) container.style.minHeight = `${d.floorMin}px`;
+        // Do not apply floorMin as minHeight — that blocked corner shrink
+        container.style.minHeight = "0";
         LAYOUT.heroResBasis = hb;
         LAYOUT.heroStageW = sw;
         LAYOUT.heroMinH = hh;
@@ -421,13 +1078,16 @@ app.registerExtension({
         container.style.setProperty('--res-control-scale', `1`);
         container.style.setProperty('--text-scale', `1`);
         container.style.padding = `12px 12px 16px 12px`;
-        container.style.minHeight = `584px`;
+        container.style.minHeight = "0";
       }
 
-      // Early theme
-      const earlyTheme = localStorage.getItem('pfld_theme') || 'default';
-      const et = THEMES[earlyTheme] || THEMES.default;
-      Object.entries(et).forEach(([k, v]) => container.style.setProperty(k, v));
+      // Early theme (shared with LoraForge)
+      const { theme: earlyT } = resolveTheme(loadSharedThemeKey());
+      Object.entries(earlyT.pf || {}).forEach(([k, v]) => container.style.setProperty(k, v));
+      if (earlyT.node) {
+        node.color = earlyT.node.color;
+        node.bgcolor = earlyT.node.bgcolor;
+      }
     } catch (e) {}
 
     const $ = (sel) => container.querySelector(sel);
@@ -459,34 +1119,98 @@ app.registerExtension({
       return (typeof y === "number" && y > 0 && y < 400) ? y : 0;
     }
     function nodeNeeded() { return _floor + widgetTopOffset() + 10; }
+
+    // Sticky size: free corner resize both ways. Soft floor only (minNodeH).
+    const SIZE_H_KEY = "pfld_node_h";
+    const SIZE_W_KEY = "pfld_node_w";
+    const NODE_MIN_H = LAYOUT.minNodeH || 720;
+    const NODE_MAX_H = LAYOUT.maxNodeH || 2400;
+    const NODE_DEF_H = LAYOUT.defaultNodeH || 1400;
+    const NODE_DEF_W = LAYOUT.defaultNodeW || 920;
+    function clampNodeH(h) {
+      const n = Math.round(Number(h) || NODE_DEF_H);
+      return Math.min(NODE_MAX_H, Math.max(NODE_MIN_H, n));
+    }
+    function loadPinnedSize() {
+      try {
+        let h = parseInt(localStorage.getItem(SIZE_H_KEY), 10);
+        let w = parseInt(localStorage.getItem(SIZE_W_KEY), 10);
+        // Honor any saved pin in the free-resize range (no force-up to 1400)
+        if (Number.isFinite(h) && h >= 400) {
+          node._savedH = clampNodeH(h);
+          node._userResized = true;
+        } else {
+          node._savedH = NODE_DEF_H;
+        }
+        if (Number.isFinite(w) && w >= LAYOUT.minNodeW) {
+          node._userW = Math.min(Math.max(w, LAYOUT.minNodeW), 1200);
+        } else {
+          node._userW = NODE_DEF_W;
+        }
+      } catch (_) {
+        node._savedH = NODE_DEF_H;
+        node._userW = NODE_DEF_W;
+      }
+    }
+    function savePinnedSize() {
+      try {
+        if (node._savedH) localStorage.setItem(SIZE_H_KEY, String(Math.round(node._savedH)));
+        if (node._userW) localStorage.setItem(SIZE_W_KEY, String(Math.round(node._userW)));
+      } catch (_) { /* */ }
+    }
+    loadPinnedSize();
+
+    function paintSizeSliders() {
+      const h = clampNodeH(node._savedH || node.size?.[1] || NODE_DEF_H);
+      const w = node._userW || node.size?.[0] || NODE_DEF_W;
+      const sh = $("#sl-node-h"), swEl = $("#sl-node-w");
+      const vh = $("#val-node-h"), vw = $("#val-node-w");
+      if (sh) sh.value = String(Math.round(h));
+      if (swEl) swEl.value = String(Math.round(w));
+      if (vh) vh.textContent = String(Math.round(h));
+      if (vw) vw.textContent = String(Math.round(w));
+    }
+
+    /** Manual size only — NEVER grows from content measure. Soft floor = minNodeH. */
+    function applyNodeSize(w, h, persist = true) {
+      w = Math.max(LAYOUT.minNodeW, Math.round(Number(w) || NODE_DEF_W));
+      h = clampNodeH(h || NODE_DEF_H);
+      node._userW = w;
+      node._savedH = h;
+      node._userResized = true;
+      node.setSize([w, h]);
+      // Widget body = remaining space inside pin (scroll if content taller)
+      const bodyH = Math.max(280, h - widgetTopOffset() - 18);
+      _floor = Math.max(280, h - widgetTopOffset() - 14);
+      if (container) {
+        container.style.height = `${bodyH}px`;
+        container.style.maxHeight = `${bodyH}px`;
+        // Never force content taller than the pin (that blocked corner shrink)
+        container.style.minHeight = "0";
+        container.style.overflowY = "auto";
+      }
+      if (persist) savePinnedSize();
+      paintSizeSliders();
+      try { app.graph?.setDirtyCanvas(true, true); } catch (_) { /* */ }
+    }
+
     function snapNodeHeight() {
       if (!node.size) return;
-      const need = nodeNeeded();
-      const dbgFloor = (_debugLayout && _debugLayout.floorMin != null) ? _debugLayout.floorMin : _FLOOR_MIN;
-      // The workflow-saved / user-dragged height is authoritative. Early
-      // measurements (before CSS + fonts settle) produce a spuriously large
-      // floor, and the grow-only logic below made that inflation permanent
-      // on every reload. Pin instead of growing.
-      if (node._savedH) {
-        if (Math.abs(node.size[1] - node._savedH) > 1) {
-          node.setSize([node.size[0], node._savedH]);
-        }
-        return;
-      }
-      const hardMin = Math.max(need, dbgFloor);
-      if (node.size[1] < hardMin) {
-        node.setSize([node.size[0], hardMin]);
-      } else if (node.size[1] > need + 28 && !node._userResized) {
-        node.setSize([node.size[0], need]);
+      // Hold the user pin only — never content-driven growth.
+      const h = clampNodeH(node._savedH || NODE_DEF_H);
+      const w = node._userW || node.size[0] || NODE_DEF_W;
+      node._savedH = h;
+      if (Math.abs(node.size[1] - h) > 1 || Math.abs(node.size[0] - w) > 1) {
+        node.setSize([w, h]);
       }
     }
     function measureFloor() {
-      const prev = container.style.height;
-      container.style.height = "auto";
-      const h = container.scrollHeight;
-      container.style.height = prev;
-      const effectiveFloor = (_debugLayout && _debugLayout.floorMin != null) ? _debugLayout.floorMin : _FLOOR_MIN;
-      if (h > 50) _floor = Math.max(effectiveFloor, h + 6);
+      // Does NOT resize the node. Only sets internal widget floor to fit the pin.
+      if (node._savedH) {
+        _floor = Math.max(280, node._savedH - widgetTopOffset() - 14);
+      } else {
+        _floor = _FLOOR_MIN;
+      }
       snapNodeHeight();
     }
     function heroHeight() {
@@ -506,28 +1230,54 @@ app.registerExtension({
     }
     function fitContainer() {
       syncHeroScale();
-      const h = (node.size?.[1] || nodeNeeded()) - widgetTopOffset() - 10;
-      container.style.height = Math.max(_floor - 6, h) + "px";
+      // Fill pinned node; scroll inside if content is taller — never push node height.
+      const pinH = clampNodeH(node._savedH || node.size?.[1] || NODE_DEF_H);
+      const bodyH = Math.max(280, pinH - widgetTopOffset() - 18);
+      container.style.height = `${bodyH}px`;
+      container.style.maxHeight = `${bodyH}px`;
+      container.style.minHeight = "0";
+      container.style.overflowY = "auto";
     }
     const scheduleLayout = () => requestAnimationFrame(() => {
-      measureFloor();
+      // No measure-driven resize — only fit UI inside current pin.
+      if (node._savedH) {
+        _floor = Math.max(280, node._savedH - widgetTopOffset() - 14);
+      }
       fitContainer();
       resMaster?.resync?.();
       imageCarousel?.resync?.();
       app.graph?.setDirtyCanvas(false, true);
     });
 
-    uiWidget.computeSize = (w) => [Math.max(10, (node.size?.[0] || w || 600) - 4), _floor];
-    node._userW = node._userW || 600;
-    if (node.size && node.size[0] < LAYOUT.minNodeW) node.setSize([LAYOUT.minNodeW, node.size[1]]);
+    // CRITICAL: report only the soft min height. If we report the pinned height,
+    // Comfy/LiteGraph refuses corner-drag shrink (min size = current size).
+    uiWidget.computeSize = (w) => {
+      const width = Math.max(10, (node.size?.[0] || w || NODE_DEF_W) - 4);
+      const minBody = Math.max(280, NODE_MIN_H - widgetTopOffset() - 12);
+      return [width, minBody];
+    };
+    node._userW = node._userW || NODE_DEF_W;
+    node._savedH = clampNodeH(node._savedH || NODE_DEF_H);
+    // Open at pinned/default size; user can freely grow or shrink after
+    applyNodeSize(node._userW || NODE_DEF_W, node._savedH, true);
     node.onResize = (size) => {
+      // User corner drag = new pin in either direction (soft floor only).
       size[0] = Math.max(size[0], LAYOUT.minNodeW);
+      size[1] = clampNodeH(size[1]);
       node._userW = size[0];
-      const dbgF = (_debugLayout && _debugLayout.floorMin != null) ? _debugLayout.floorMin : 0;
-      size[1] = Math.max(size[1], nodeNeeded(), dbgF);
-      node._userResized = size[1] > nodeNeeded() + 28;
-      node._savedH = size[1]; // manual resize becomes the new sticky height
-      fitContainer();
+      node._savedH = size[1];
+      node._userResized = true;
+      savePinnedSize();
+      paintSizeSliders();
+      // Keep body inside the new shell so DOM min-height can't fight the drag
+      const bodyH = Math.max(280, size[1] - widgetTopOffset() - 18);
+      _floor = Math.max(280, size[1] - widgetTopOffset() - 14);
+      if (container) {
+        container.style.height = `${bodyH}px`;
+        container.style.maxHeight = `${bodyH}px`;
+        container.style.minHeight = "0";
+        container.style.overflowY = "auto";
+      }
       resMaster?.resync?.();
       imageCarousel?.resync?.();
     };
@@ -568,16 +1318,64 @@ app.registerExtension({
       const v = resolve(inp.link, 0);
       return v != null ? v : (gw(n)?.value ?? fb);
     }
-    const getDur = () => parseFloat(getLinkedVal("duration_s", 12)) || 12;
-    const getFps = () => parseInt(getLinkedVal("fps", 24), 10) || 24;
+    // Priority: wired duration_s/fps inputs win. Else Dur slider (localDur).
+    // Badge + slider always show the same effective values so they never fight.
+    const getDur = () => {
+      if (isInputWired("duration_s")) {
+        const v = parseFloat(getLinkedVal("duration_s", localDur));
+        return Number.isFinite(v) && v > 0 ? v : localDur;
+      }
+      return localDur;
+    };
+    const getFps = () => {
+      if (isInputWired("fps")) {
+        const v = parseInt(getLinkedVal("fps", 24), 10);
+        return Number.isFinite(v) && v > 0 ? v : 24;
+      }
+      return 24;
+    };
+
+    function paintDurSlider() {
+      const durEl = $("#gpl-dur");
+      const valEl = $("#gpl-dur-val");
+      const wrap = durEl?.closest?.(".gpl-dur-inline") || durEl?.parentElement;
+      const d = getDur();
+      const wiredDur = isInputWired("duration_s");
+      if (durEl) {
+        durEl.value = String(d);
+        durEl.disabled = wiredDur;
+        durEl.title = wiredDur
+          ? "Locked — duration_s is wired (disconnect the input to use this slider)"
+          : "Clip length used for Generate (when duration_s is not wired)";
+      }
+      if (valEl) {
+        valEl.textContent = wiredDur ? `${d.toFixed(1)}s · wired` : `${d.toFixed(1)}s`;
+      }
+      if (wrap) wrap.classList.toggle("gpl-dur-wired", wiredDur);
+    }
 
     function syncLive() {
       const el = $("#gpl-live");
       if (!el) return;
       const wired = isInputWired("duration_s") || isInputWired("fps");
-      el.textContent = `${getDur().toFixed(1)}s · ${getFps()}fps`;
+      const warm = keepWarm ? " · warm" : "";
+      const d = getDur();
+      const f = getFps();
+      // Compact live chip — seed lives in its own strip now
+      el.textContent = `${d.toFixed(1)}s · ${f}fps · ${castMode}${warm}`;
       el.classList.toggle("wired", wired);
-      el.title = wired ? "Duration/fps wired from input nodes" : "Connect duration_s / fps inputs to override";
+      el.title = wired
+        ? "Duration/fps from wired inputs (slider locked while duration_s is connected)"
+        : "Duration from Dur slider — wire duration_s / fps to override";
+      paintDurSlider();
+      paintSeedUI();
+      const strip = $("#gpl-cont-strip");
+      if (strip) {
+        strip.textContent = lastContinuity
+          ? `Continuity: ${lastContinuity.slice(0, 140)}${lastContinuity.length > 140 ? "…" : ""}`
+          : "Continuity: (empty — generate once to lock state)";
+        strip.classList.toggle("has", !!lastContinuity);
+      }
     }
 
     function applyRes(w, h, scale) {
@@ -603,6 +1401,7 @@ app.registerExtension({
     fillSelect($("#gpl-scn"), "scenario");
     fillSelect($("#gpl-env"), "environment");
     fillSelect($("#gpl-music"), "music");
+    refreshScenarioList();
 
     function savedModel() {
       return localStorage.getItem("pfld_model_file") || gw("model_file")?.value || "";
@@ -775,6 +1574,16 @@ app.registerExtension({
     });
 
     function buildComposeBody() {
+      leadGender = $("#gpl-lead")?.value || leadGender || "auto";
+      accentMode = $("#gpl-accent")?.value || accentMode || "auto";
+      accentPartner = $("#gpl-accent-partner")?.value || accentPartner || "off";
+      keepWarm = !!$("#gpl-keep-warm")?.checked;
+      carryNext = !!$("#gpl-carry")?.checked;
+      detailerOn = !!$("#gpl-detailer")?.checked;
+      repairOn = $("#gpl-repair") ? !!$("#gpl-repair").checked : repairOn;
+      selfCheckOn = $("#gpl-self-check") ? !!$("#gpl-self-check").checked : selfCheckOn;
+      selfCheckMode = $("#gpl-self-check-mode")?.value || selfCheckMode || "fix";
+      const energy = levelToEnergy(motionLevel);
       return {
         model_file: llmBackend === GPL_BACKENDS.MANAGED ? (gw("model_file")?.value || "None") : "None",
         mmproj_file: llmBackend === GPL_BACKENDS.MANAGED ? (gw("mmproj_file")?.value || "None (text-only)") : "None (text-only)",
@@ -782,16 +1591,179 @@ app.registerExtension({
         duration_s: getDur(),
         fps: getFps(),
         dialogue_tier: dlgTier,
-        intensity: parseInt($("#gpl-int").value, 10) || 6,
+        // qualitative axes (primary) + legacy numeric for old paths
+        motion_level: motionLevel,
+        mouth_heat: mouthHeat,
+        intensity: energy,
         user_intent: ($("#gpl-intent")?.value || "").trim(),
+        lora_triggers: ($("#gpl-lora-trig")?.value || "").trim(),
         image_b64: "",
         pov: povMode !== "off",
         pov_gender: povMode === "male" ? "male" : "female",
+        cast: castMode,
+        lead_gender: leadGender,
+        accent_mode: accentMode,
+        accent_partner: accentPartner,
+        video_style: ($("#gpl-style")?.value || "None — off (no style path)"),
+        continuity_state: carryNext ? (lastContinuity || (gw("continuity_state")?.value || "")) : "",
+        keep_warm: keepWarm,
+        detailer: detailerOn,
+        repair: repairOn,
+        self_check: selfCheckOn,
+        self_check_mode: selfCheckMode,
+        self_check_chips: selfCheckChips.slice(),
+        seed: seedForGenerate(),
         environment: $("#gpl-env")?.value,
         scenario: $("#gpl-scn")?.value,
         camera_move: $("#gpl-cam")?.value,
         music: ($("#gpl-music")?.value || "").trim(),
       };
+    }
+
+    function paintSelfCheckChips() {
+      const host = $("#gpl-self-check-chips");
+      if (!host) return;
+      host.innerHTML = "";
+      SELF_CHECK_CHIPS.forEach((c) => {
+        const on = selfCheckChips.includes(c.id);
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "gpl-chip" + (on ? " on" : "");
+        b.textContent = c.label;
+        b.dataset.id = c.id;
+        b.style.cssText = "font:600 10px JetBrains Mono;padding:4px 8px;border-radius:999px;cursor:pointer;"
+          + (on
+            ? "border:1px solid rgba(255,200,87,.55);background:rgba(255,200,87,.14);color:var(--gold)"
+            : "border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:var(--muted)");
+        b.title = c.label + " — toggle question";
+        b.addEventListener("click", () => {
+          if (selfCheckChips.includes(c.id)) {
+            selfCheckChips = selfCheckChips.filter((x) => x !== c.id);
+          } else {
+            selfCheckChips = selfCheckChips.concat([c.id]);
+          }
+          if (!selfCheckChips.length) selfCheckChips = SELF_CHECK_DEFAULT.slice();
+          try { localStorage.setItem("pfld_self_check_chips", JSON.stringify(selfCheckChips)); } catch { /* */ }
+          paintSelfCheckChips();
+        });
+        host.appendChild(b);
+      });
+    }
+
+    async function applyRecipeHints(key) {
+      if (!key || !String(key).includes("Recipe")) return;
+      try {
+        const r = await fetch(`/pfld/get_scenario?key=${encodeURIComponent(key)}`);
+        const j = await r.json();
+        if (!j.ok) return;
+        if (j.cast_hint && ["solo", "pair", "group"].includes(j.cast_hint)) {
+          castMode = j.cast_hint;
+          localStorage.setItem("pfld_cast", castMode);
+          $("#gpl-cast")?.querySelectorAll(".gpl-chip").forEach((b) => {
+            b.classList.toggle("on", b.dataset.v === castMode);
+          });
+          sw("cast", castMode);
+        }
+        if (j.motion) setMotionLevel(String(j.motion).toLowerCase());
+        if (j.mouth_heat) setMouthHeat(String(j.mouth_heat).toLowerCase());
+        if (j.duration_hint && !isInputWired("duration_s")) {
+          localDur = parseFloat(j.duration_hint) || localDur;
+          localStorage.setItem("pfld_dur", String(localDur));
+          if ($("#gpl-dur")) $("#gpl-dur").value = String(localDur);
+          if ($("#gpl-dur-val")) $("#gpl-dur-val").textContent = `${localDur}s`;
+          sw("duration_s", localDur);
+        }
+        if (j.dialogue_tier_hint) {
+          const t = j.dialogue_tier_hint === "none" ? "none"
+            : (j.dialogue_tier_hint === "talkative" ? "talkative" : "standard");
+          dlgTier = t;
+          localStorage.setItem("pfld_dlg", dlgTier);
+          $("#gpl-dlg")?.querySelectorAll(".gpl-chip").forEach((b) => {
+            b.classList.toggle("on", b.dataset.v === dlgTier);
+          });
+          sw("dialogue_tier", dlgTier);
+        }
+        if (j.pov_hint === "female" || j.pov_hint === "male") {
+          povMode = j.pov_hint;
+          localStorage.setItem("pfld_pov", povMode);
+          $("#gpl-pov")?.querySelectorAll(".gpl-chip").forEach((b) => {
+            b.classList.toggle("on", b.dataset.v === povMode);
+          });
+          sw("pov", true);
+          sw("pov_gender", povMode);
+        }
+        setSt("Recipe hints applied (cast / intensity / dur / talk) — tweak freely.");
+        setTimeout(() => setSt(""), 2200);
+      } catch (_) { /* ignore */ }
+    }
+
+    async function refreshScenarioList() {
+      const sel = $("#gpl-scn");
+      if (!sel) return;
+      const prev = sel.value;
+      const label = $("#gpl-scn-label");
+      if (label) {
+        label.textContent = videoMode === "t2v" ? "T2V shot recipe" : "I2V scenario";
+      }
+      try {
+        const r = await fetch(`/pfld/scenario_keys?mode=${encodeURIComponent(videoMode)}`);
+        const j = await r.json();
+        const keys = (j.ok && j.keys) ? j.keys : null;
+        if (keys && keys.length) {
+          sel.innerHTML = "";
+          keys.forEach((k) => {
+            const opt = document.createElement("option");
+            opt.value = k;
+            opt.textContent = k;
+            sel.appendChild(opt);
+          });
+          if (keys.includes(prev)) sel.value = prev;
+          else sel.selectedIndex = 0;
+          sw("scenario", sel.value);
+          return;
+        }
+      } catch (e) { /* fall through to widget values */ }
+      // Fallback: all widget options (unfiltered)
+      fillSelect(sel, "scenario");
+      if (prev) sel.value = prev;
+    }
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+      catch { return []; }
+    }
+    function saveHistory(list) {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); }
+      catch { /* quota */ }
+    }
+    function pushHistory(intent, script) {
+      const s = (script || "").trim();
+      if (!s) return;
+      const entry = {
+        t: Date.now(),
+        intent: (intent || "").slice(0, 120),
+        script: s,
+        continuity: lastContinuity || "",
+      };
+      const list = loadHistory().filter((x) => x.script !== s);
+      list.unshift(entry);
+      saveHistory(list);
+      paintHistory();
+    }
+    function paintHistory() {
+      const sel = $("#gpl-history");
+      if (!sel) return;
+      const list = loadHistory();
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">History (${list.length})…</option>`;
+      list.forEach((e, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        const when = new Date(e.t).toLocaleString();
+        opt.textContent = `${when} · ${(e.intent || "—").slice(0, 40)} · ${e.script.length}c`;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
     }
 
     async function previewCompose() {
@@ -944,8 +1916,14 @@ app.registerExtension({
       // Internal breathing room inside the dark box
       container.style.padding = `${cpad}px ${cpad}px ${Math.round(cpad * 1.33)}px ${cpad}px`;
 
-      // Floor min controls overall node/widget height
-      container.style.minHeight = `${floorMin}px`;
+      // Content floor is cosmetic only — never force DOM taller than the pin
+      // (that used to block corner-drag shrink). Scroll inside instead.
+      const pinH = clampNodeH(node._savedH || node.size?.[1] || NODE_DEF_H);
+      const bodyCap = Math.max(280, pinH - widgetTopOffset() - 18);
+      container.style.minHeight = "0";
+      container.style.height = `${bodyCap}px`;
+      container.style.maxHeight = `${bodyCap}px`;
+      container.style.overflowY = "auto";
 
       _debugLayout = {
         heroResBasis: heroBasis,
@@ -972,11 +1950,11 @@ app.registerExtension({
         } catch (e) {}
       }
 
-      // Force everything to update + resync the bbox (critical for height changes)
-      if (typeof scheduleLayout === 'function') {
-        scheduleLayout();
-      } else if (typeof fitContainer === 'function') {
+      // Refit UI inside the *existing* pin — never setSize from layout sliders.
+      if (typeof fitContainer === 'function') {
         fitContainer();
+      } else if (typeof scheduleLayout === 'function') {
+        scheduleLayout();
       }
       resMaster?.resync?.();
 
@@ -985,22 +1963,14 @@ app.registerExtension({
         resMaster.setBoxOffset(boxX, boxY);
       }
 
-      // Extra resync + size nudge for hero height + floor to take effect
       requestAnimationFrame(() => {
         resMaster?.resync?.();
-        if (node && node.size) {
-          const base = (typeof nodeNeeded === 'function') ? nodeNeeded() : 450;
-          const targetH = Math.max(floorMin, base + Math.max(0, t) + Math.max(0, b));
-          if (node.size[1] < targetH) {
-            node.setSize([Math.max(node.size[0], LAYOUT.minNodeW || 580), targetH]);
-            node._savedH = targetH; // sliders set the new authoritative height
-          }
-          if (typeof fitContainer === 'function') fitContainer();
-        }
+        imageCarousel?.resync?.();
+        // Hold pin steady (in case LiteGraph nudged during resync)
+        if (typeof snapNodeHeight === 'function') snapNodeHeight();
+        if (typeof fitContainer === 'function') fitContainer();
+        if (typeof paintSizeSliders === 'function') paintSizeSliders();
       });
-
-      // Also keep pinW happy
-      requestAnimationFrame(() => { /* pinW loop will maintain width/margins */ });
     }
 
     // Update a val badge next to slider + live preview (no save)
@@ -1016,6 +1986,30 @@ app.registerExtension({
       // initialize val badge
       if (v) v.textContent = s.value;
     }
+
+    // ★ Node size sliders — explicit, no auto-grow
+    const bindNodeSizeSliders = () => {
+      const sh = $("#sl-node-h");
+      const swEl = $("#sl-node-w");
+      const live = () => {
+        const h = parseInt(sh?.value, 10) || NODE_DEF_H;
+        const w = parseInt(swEl?.value, 10) || NODE_DEF_W;
+        if ($("#val-node-h")) $("#val-node-h").textContent = String(h);
+        if ($("#val-node-w")) $("#val-node-w").textContent = String(w);
+        applyNodeSize(w, h, true);
+      };
+      sh?.addEventListener("input", live);
+      swEl?.addEventListener("input", live);
+      $("#gpl-apply-size")?.addEventListener("click", live);
+      $("#gpl-size-compact")?.addEventListener("click", () => {
+        if (sh) sh.value = String(NODE_DEF_H);
+        if (swEl) swEl.value = String(NODE_DEF_W);
+        live();
+        setSt(`Node size → default ${NODE_DEF_W}×${NODE_DEF_H}`);
+      });
+      paintSizeSliders();
+    };
+    bindNodeSizeSliders();
 
     // Bind all sliders for live preview
     bindSlider('sl-t', 'val-t');
@@ -1034,7 +2028,10 @@ app.registerExtension({
 
     // Save = persist current slider values
     $("#gpl-save-layout")?.addEventListener("click", () => {
+      // Persist insets/hero only — do NOT change node.size / _savedH
       applyDebug(true);
+      snapNodeHeight();
+      paintSizeSliders();
       const btn = $("#gpl-save-layout");
       if (btn) {
         const old = btn.textContent;
@@ -1047,6 +2044,8 @@ app.registerExtension({
       try {
         localStorage.removeItem('pfld_debug_pad');
         localStorage.removeItem('pfld_debug_layout');
+        localStorage.removeItem(SIZE_H_KEY);
+        localStorage.removeItem(SIZE_W_KEY);
       } catch (e) {}
 
       // Reset sliders + badges to sensible defaults (current perfect from user screenshot)
@@ -1071,8 +2070,14 @@ app.registerExtension({
 
       _debugPad = null;
       _debugLayout = null;
-      node._savedH = null;      // release the height pin so layout can re-snap
-      node._userResized = false;
+      node._savedH = NODE_DEF_H;
+      node._userResized = true;
+      try {
+        localStorage.removeItem(SIZE_H_KEY);
+        localStorage.removeItem(SIZE_W_KEY);
+      } catch (_) { /* */ }
+      // Reset to default tall shell (1400)
+      applyNodeSize(NODE_DEF_W, NODE_DEF_H, true);
 
       LAYOUT.heroResBasis = 390;
       LAYOUT.heroStageW = 135;
@@ -1085,21 +2090,33 @@ app.registerExtension({
       scheduleLayout?.();
     });
 
-    // Theme handling (swap colors only, layout stays identical)
+    // Theme handling (swap colors only, layout stays identical).
+    // Keys are shared with LoraForge via themes_ld.js + localStorage pfld_theme.
     function applyTheme(name, save = true) {
-      const theme = THEMES[name] || THEMES.default;
-      Object.entries(theme).forEach(([k, v]) => {
+      const { id, theme } = resolveTheme(name);
+      const pf = theme.pf || THEMES.default;
+      Object.entries(pf).forEach(([k, v]) => {
         container.style.setProperty(k, v);
       });
-      const sel = $("#gpl-theme");
-      if (sel) sel.value = name;
-      if (save) {
-        try { localStorage.setItem('pfld_theme', name); } catch (e) {}
+      // Comfy node chrome (title bar) matches panel
+      if (theme.node) {
+        try {
+          node.color = theme.node.color;
+          node.bgcolor = theme.node.bgcolor;
+          node.setDirtyCanvas?.(true, true);
+        } catch { /* */ }
       }
+      const sel = $("#gpl-theme");
+      if (sel) sel.value = id;
+      if (save) saveSharedThemeKey(id);
     }
 
     $("#gpl-theme")?.addEventListener("change", (e) => {
       applyTheme(e.target.value, true);
+    });
+    // If LoraForge cycles the shared theme in another node, pick it up
+    window.addEventListener("storage", (e) => {
+      if (e.key === "pfld_theme" && e.newValue) applyTheme(e.newValue, false);
     });
 
     // Load saved sliders on startup (after DOM + a tick)
@@ -1140,9 +2157,8 @@ app.registerExtension({
       // Apply whatever is in the sliders now (live, no extra save)
       applyDebug(false);
 
-      // Load saved theme
-      const savedTheme = localStorage.getItem('pfld_theme') || 'default';
-      applyTheme(savedTheme, false);
+      // Load shared theme (same key as LoraForge)
+      applyTheme(loadSharedThemeKey(), false);
     }, 160);
 
     function bindChips(id, onPick) {
@@ -1154,7 +2170,15 @@ app.registerExtension({
         };
       });
     }
-    const setDlg = (t) => { dlgTier = t; localStorage.setItem("pfld_dlg", t); sw("dialogue_tier", t); };
+    const setDlg = (t) => {
+      dlgTier = t || "standard";
+      localStorage.setItem("pfld_dlg", dlgTier);
+      sw("dialogue_tier", dlgTier);
+      // Keep chip paint honest (widget restore must not leave Silent unselected)
+      $("#gpl-dlg")?.querySelectorAll(".gpl-chip").forEach((b) => {
+        b.classList.toggle("on", b.dataset.v === dlgTier);
+      });
+    };
     const paintPov = (m) => {
       const pov = m || "off";
       $("#gpl-pov")?.querySelectorAll(".gpl-chip").forEach((b) => {
@@ -1168,10 +2192,199 @@ app.registerExtension({
       sw("pov_gender", m === "male" ? "male" : "female");
       paintPov(m);
     };
+    const setCast = (c) => {
+      castMode = c || "pair";
+      localStorage.setItem("pfld_cast", castMode);
+      sw("cast", castMode);
+      $("#gpl-cast")?.querySelectorAll(".gpl-chip").forEach((b) => {
+        b.classList.toggle("on", b.dataset.v === castMode);
+      });
+      syncLive();
+    };
     bindChips("gpl-dlg", setDlg);
     bindChips("gpl-pov", setPov);
-    setDlg(gw("dialogue_tier")?.value || dlgTier);
+    bindChips("gpl-cast", setCast);
+    // Prefer UI/localStorage tier over widget default ("standard") so Silent survives reload
+    {
+      const wDlg = gw("dialogue_tier")?.value;
+      const lsDlg = localStorage.getItem("pfld_dlg");
+      const pick = (lsDlg && ["none", "standard", "talkative"].includes(lsDlg))
+        ? lsDlg
+        : (wDlg && ["none", "standard", "talkative"].includes(wDlg) ? wDlg : (dlgTier || "standard"));
+      setDlg(pick);
+    }
     setPov(povMode || "off");
+    setCast(gw("cast")?.value || castMode || "pair");
+
+    // Duration slider = local fallback. Wired duration_s always wins (slider locks).
+    const durEl = $("#gpl-dur");
+    if (durEl) {
+      durEl.value = String(localDur);
+      const onDurSlide = () => {
+        if (isInputWired("duration_s")) {
+          // Ignore drags while locked — snap UI back to wire
+          paintDurSlider();
+          return;
+        }
+        localDur = parseFloat(durEl.value) || 12;
+        localStorage.setItem("pfld_dur", String(localDur));
+        // Keep hidden widget in sync when Comfy exposes it (forceInput may omit it)
+        try { sw("duration_s", localDur); } catch (_) { /* no widget */ }
+        syncLive();
+      };
+      durEl.addEventListener("input", onDurSlide);
+      paintDurSlider();
+    }
+    if ($("#gpl-lead")) {
+      $("#gpl-lead").value = gw("lead_gender")?.value || leadGender || "auto";
+      $("#gpl-lead").addEventListener("change", () => {
+        leadGender = $("#gpl-lead").value || "auto";
+        localStorage.setItem("pfld_lead", leadGender);
+        sw("lead_gender", leadGender);
+      });
+    }
+    if ($("#gpl-style")) {
+      const vs0 = gw("video_style")?.value;
+      const applyStyleVal = (v) => {
+        if (!v) return;
+        try {
+          $("#gpl-style").value = v;
+          $("#gpl-style")._pfldSyncStyleBtn?.();
+        } catch (_) { /* */ }
+      };
+      if (vs0) applyStyleVal(vs0);
+      $("#gpl-style").addEventListener("change", () => {
+        try { sw("video_style", $("#gpl-style").value); } catch (_) {}
+        localStorage.setItem("pfld_style", $("#gpl-style").value || "");
+        $("#gpl-style")._pfldSyncStyleBtn?.();
+      });
+      try {
+        const saved = localStorage.getItem("pfld_style");
+        if (saved && !vs0) applyStyleVal(saved);
+      } catch (_) {}
+    }
+    if ($("#gpl-accent")) {
+      $("#gpl-accent").value = accentMode || "auto";
+      $("#gpl-accent").addEventListener("change", () => {
+        accentMode = $("#gpl-accent").value || "auto";
+        localStorage.setItem("pfld_accent", accentMode);
+        sw("accent_mode", accentMode);
+      });
+    }
+    if ($("#gpl-keep-warm")) {
+      $("#gpl-keep-warm").checked = keepWarm;
+      $("#gpl-keep-warm").addEventListener("change", () => {
+        keepWarm = !!$("#gpl-keep-warm").checked;
+        localStorage.setItem("pfld_keep_warm", keepWarm ? "1" : "0");
+        syncLive();
+      });
+    }
+    if ($("#gpl-repair")) {
+      $("#gpl-repair").checked = repairOn;
+      $("#gpl-repair").addEventListener("change", () => {
+        repairOn = !!$("#gpl-repair").checked;
+        localStorage.setItem("pfld_repair", repairOn ? "1" : "0");
+        setSt(repairOn ? "Post-repair scrub ON" : "Post-repair scrub OFF — raw model text kept");
+      });
+    }
+    if ($("#gpl-self-check")) {
+      $("#gpl-self-check").checked = selfCheckOn;
+      $("#gpl-self-check").addEventListener("change", () => {
+        selfCheckOn = !!$("#gpl-self-check").checked;
+        localStorage.setItem("pfld_self_check", selfCheckOn ? "1" : "0");
+        setSt(selfCheckOn
+          ? `Self-check ON (${selfCheckMode}) — extra QA pass after draft`
+          : "Self-check OFF — normal generate");
+      });
+    }
+    if ($("#gpl-self-check-mode")) {
+      $("#gpl-self-check-mode").value = selfCheckMode;
+      $("#gpl-self-check-mode").addEventListener("change", () => {
+        selfCheckMode = $("#gpl-self-check-mode").value === "report" ? "report" : "fix";
+        localStorage.setItem("pfld_self_check_mode", selfCheckMode);
+        setSt(`Self-check mode → ${selfCheckMode}`);
+      });
+    }
+    paintSelfCheckChips();
+    if ($("#gpl-carry")) {
+      $("#gpl-carry").checked = carryNext;
+      $("#gpl-carry").addEventListener("change", () => {
+        carryNext = !!$("#gpl-carry").checked;
+        localStorage.setItem("pfld_carry", carryNext ? "1" : "0");
+      });
+    }
+    $("#gpl-carry-clear")?.addEventListener("click", () => {
+      lastContinuity = "";
+      try { sw("continuity_state", ""); } catch (_) {}
+      syncLive();
+      setSt("Continuity cleared");
+    });
+    if ($("#gpl-detailer")) {
+      $("#gpl-detailer").checked = detailerOn;
+      $("#gpl-detailer").addEventListener("change", () => {
+        detailerOn = !!$("#gpl-detailer").checked;
+        localStorage.setItem("pfld_detailer", detailerOn ? "1" : "0");
+      });
+    }
+    // Seed: header strip (primary) + cog mirror
+    paintSeedUI();
+    container.querySelectorAll(".gpl-seed-mode-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        setSeedMode(b.dataset.mode || "random");
+        setSt(`Seed mode → ${seedMode}`);
+      });
+    });
+    const onSeedEdit = () => {
+      const n = parseInt($("#gpl-seed-hd")?.value ?? $("#gpl-seed")?.value, 10);
+      if (Number.isFinite(n) && n >= 0) {
+        lastSeed = n >>> 0;
+        try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+        paintSeedUI();
+      }
+    };
+    $("#gpl-seed-hd")?.addEventListener("change", onSeedEdit);
+    $("#gpl-seed-hd")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); onSeedEdit(); }
+    });
+    $("#gpl-seed")?.addEventListener("change", () => {
+      const n = parseInt($("#gpl-seed")?.value, 10);
+      if (Number.isFinite(n) && n >= 0) {
+        lastSeed = n >>> 0;
+        try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+        paintSeedUI();
+      }
+    });
+    const rollClick = () => {
+      const s = rollSeed();
+      setSt(`Seed → ${s}`);
+    };
+    $("#gpl-seed-roll-hd")?.addEventListener("click", rollClick);
+    $("#gpl-seed-roll")?.addEventListener("click", rollClick);
+    $("#gpl-kill-llm")?.addEventListener("click", async () => {
+      try {
+        await fetch("/pfld/kill", { method: "POST" });
+        setSt("LLM killed · VRAM flushed");
+      } catch (e) {
+        setSt("Kill failed: " + e.message);
+      }
+    });
+    paintHistory();
+    $("#gpl-history")?.addEventListener("change", () => {
+      const i = parseInt($("#gpl-history").value, 10);
+      if (Number.isNaN(i)) return;
+      const e = loadHistory()[i];
+      if (!e) return;
+      $("#gpl-out").value = e.script;
+      draftPrompt = e.script;
+      commitOutput(e.script);
+      if (e.intent) $("#gpl-intent").value = e.intent;
+      if (e.continuity) {
+        lastContinuity = e.continuity;
+        sw("continuity_state", lastContinuity);
+      }
+      setSt(`Restored history · ${e.script.length} chars`);
+      syncLive();
+    });
 
     function setVideoMode(mode) {
       videoMode = mode === "t2v" ? "t2v" : "i2v";
@@ -1180,17 +2393,64 @@ app.registerExtension({
       $("#gpl-mode-tabs")?.querySelectorAll(".gpl-tab").forEach((t) => {
         t.classList.toggle("on", t.dataset.mode === videoMode);
       });
+      refreshScenarioList();
       mountRes();
       scheduleLayout();
     }
     $("#gpl-mode-tabs")?.querySelectorAll(".gpl-tab").forEach((tab) => {
       tab.onclick = () => setVideoMode(tab.dataset.mode);
     });
-    const intEl = $("#gpl-int");
-    const energyLabel = (v) => v <= 3 ? "low" : v <= 7 ? "medium" : "high";
-    const syncInt = () => { const v = parseInt(intEl?.value, 10) || 5; if ($("#gpl-int-val")) $("#gpl-int-val").textContent = `${v} · ${energyLabel(v)}`; sw("intensity", v); };
-    intEl?.addEventListener("input", syncInt);
-    syncInt();
+    // Body intensity + mouth heat — qualitative chips (no magic numbers)
+    const paintLevelChips = (rootId, current) => {
+      $(`#${rootId}`)?.querySelectorAll(".gpl-chip").forEach((btn) => {
+        btn.classList.toggle("on", btn.dataset.v === current);
+      });
+    };
+    const setMotionLevel = (k) => {
+      motionLevel = k || "normal";
+      localStorage.setItem("pfld_motion", motionLevel);
+      paintLevelChips("gpl-motion", motionLevel);
+      const e = levelToEnergy(motionLevel);
+      sw("intensity", e);
+      try { sw("motion_level", INTENSITY_LEVELS.find((x) => x.k === motionLevel)?.lab || "Normal"); } catch (_) {}
+      if ($("#gpl-int")) $("#gpl-int").value = String(e);
+    };
+    const setMouthHeat = (k) => {
+      mouthHeat = k || "normal";
+      localStorage.setItem("pfld_mouth", mouthHeat);
+      paintLevelChips("gpl-mouth", mouthHeat);
+      try { sw("mouth_heat", INTENSITY_LEVELS.find((x) => x.k === mouthHeat)?.lab || "Normal"); } catch (_) {}
+    };
+    $("#gpl-motion")?.querySelectorAll(".gpl-chip").forEach((btn) => {
+      btn.addEventListener("click", () => setMotionLevel(btn.dataset.v));
+    });
+    $("#gpl-mouth")?.querySelectorAll(".gpl-chip").forEach((btn) => {
+      btn.addEventListener("click", () => setMouthHeat(btn.dataset.v));
+    });
+    // Migrate legacy intensity widget → levels once
+    if (!localStorage.getItem("pfld_motion")) {
+      const legacy = parseInt(gw("intensity")?.value, 10);
+      if (legacy) motionLevel = energyToLevel(legacy);
+    }
+    setMotionLevel(motionLevel);
+    setMouthHeat(mouthHeat);
+
+    // Shot recipes can auto-lean cast / intensity / duration / talk
+    $("#gpl-scn")?.addEventListener("change", () => {
+      const key = $("#gpl-scn")?.value || "";
+      sw("scenario", key);
+      applyRecipeHints(key);
+    });
+
+    // Partner accent
+    if ($("#gpl-accent-partner")) {
+      $("#gpl-accent-partner").value = accentPartner || "off";
+      $("#gpl-accent-partner").addEventListener("change", () => {
+        accentPartner = $("#gpl-accent-partner").value || "off";
+        localStorage.setItem("pfld_accent_partner", accentPartner);
+        try { sw("accent_partner", accentPartner); } catch (_) {}
+      });
+    }
     function downscaleDataUrl(src, maxSide) {
       return new Promise((resolve) => {
         const img = new Image();
@@ -1289,19 +2549,45 @@ app.registerExtension({
       if (p != null && p.trim()) applyFolder(p.trim());
     }
     async function applyFolder(path) {
+      path = (path || "").trim();
       inputFolder = path;
       localStorage.setItem("pfld_input_folder", path);
       if ($("#gpl-folder-path")) $("#gpl-folder-path").value = path;
+      setSt(path ? "Switching image folder…" : "Resetting image folder…");
+      let ok = true;
+      let errMsg = "";
       try {
-        await fetch("/pfld/set_input_folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
-      } catch { /* */ }
-      refreshGallery();
+        const r = await fetch("/pfld/set_input_folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.ok === false) {
+          ok = false;
+          errMsg = j.error || `HTTP ${r.status}`;
+        } else if (j.path) {
+          inputFolder = j.path;
+          if ($("#gpl-folder-path")) $("#gpl-folder-path").value = j.path;
+        }
+      } catch (e) {
+        ok = false;
+        errMsg = e.message || "network";
+      }
+      // Always hard-reset carousel so same filenames in a new folder don't keep stale thumbs.
+      _galleryKey = null;
+      _galleryCacheKey = "";
+      await refreshGallery(true, { hard: true, status: ok });
+      if (!ok) setSt("Folder apply failed: " + errMsg);
     }
     $("#gpl-folder-apply")?.addEventListener("click", () => applyFolder($("#gpl-folder-path")?.value?.trim() || ""));
     if (inputFolder) { $("#gpl-folder-path").value = inputFolder; applyFolder(inputFolder); }
 
+    let _galleryCacheKey = "";
     function thumbUrl(name, max = 360) {
-      return `/pfld/thumb?name=${encodeURIComponent(name)}&max=${max}`;
+      let u = `/pfld/thumb?name=${encodeURIComponent(name)}&max=${max}`;
+      if (_galleryCacheKey) u += `&v=${encodeURIComponent(_galleryCacheKey)}`;
+      return u;
     }
 
     async function loadGalleryImage(name) {
@@ -1326,11 +2612,17 @@ app.registerExtension({
       return "";
     }
     let _galleryKey = null;
-    async function refreshGallery(force = true) {
+    async function refreshGallery(force = true, opts = {}) {
+      const hard = !!(opts && opts.hard);
+      const showStatus = !!(opts && opts.status);
       try {
-        const j = await (await fetch("/pfld/list_images?limit=40")).json();
-        if (j.input_dir && $("#gpl-folder-path")) $("#gpl-folder-path").value = inputFolder || j.input_dir;
-        if (j.input_dir && $("#gpl-folder-path") && !$("#gpl-folder-path").value) $("#gpl-folder-path").value = j.input_dir;
+        const j = await (await fetch("/pfld/list_images?limit=40&_=" + Date.now())).json();
+        if (j.input_dir && $("#gpl-folder-path")) {
+          // Prefer live server path after Apply; keep typed path if user is mid-edit only when empty
+          if (inputFolder) $("#gpl-folder-path").value = inputFolder;
+          else if (!$("#gpl-folder-path").value) $("#gpl-folder-path").value = j.input_dir;
+        }
+        if (j.cache_key) _galleryCacheKey = String(j.cache_key);
 
         let list = j.images || [];
         if (videoMode === "t2v") {
@@ -1343,12 +2635,34 @@ app.registerExtension({
         }
         // Auto-poll calls with force=false: skip the rebuild when nothing
         // changed, so the carousel never resets focus or churns the DOM.
-        const key = (j.input_dir || "") + "::" + list.join("|");
-        if (!force && key === _galleryKey) return;
+        const key = (j.cache_key || j.input_dir || "") + "::" + list.join("|");
+        const folderChanged = hard || (force && _galleryKey && _galleryKey.split("::")[0] !== key.split("::")[0]);
+        if (!force && !hard && key === _galleryKey) return;
+        const needHard = hard || folderChanged || force;
         _galleryKey = key;
         const current = imgFilename || (videoMode === "t2v" ? NO_IMAGE_NAME : "");
-        imageCarousel?.setImages(list, current);
-      } catch { /* gallery offline */ }
+        // Drop selection if it isn't in the new folder (except T2V "No image")
+        const pick = (current && list.includes(current)) ? current
+          : (videoMode === "t2v" ? NO_IMAGE_NAME : (list[0] || ""));
+        if (current && current !== NO_IMAGE_NAME && !list.includes(current)) {
+          // Old focus file gone — clear hero so we don't keep a stale path
+          if (imgFilename === current) setImage(null, 0, 0, "");
+        }
+        if (imageCarousel) {
+          imageCarousel.setImages(list, pick, { hardReset: needHard });
+          // Rebind every card src with cache-busted thumb URLs (new folder / new mtimes)
+          if (typeof imageCarousel.rebindSrcs === "function") {
+            imageCarousel.rebindSrcs((name) => thumbUrl(name, 360));
+          }
+        }
+        if (showStatus || hard) {
+          const n = typeof j.count === "number" ? j.count : (j.images || []).length;
+          const dir = j.input_dir || inputFolder || "folder";
+          setSt(n ? `Loaded ${n} image${n === 1 ? "" : "s"} · ${dir}` : `No images in ${dir}`);
+        }
+      } catch (e) {
+        if (showStatus || hard) setSt("Gallery refresh failed" + (e?.message ? ": " + e.message : ""));
+      }
     }
 
     // Watch the input folder — new/removed images appear without a manual refresh.
@@ -1412,9 +2726,10 @@ app.registerExtension({
               loadGalleryImage(name);
             }
           },
+          onRefresh: () => refreshGallery(true, { hard: true, status: true }),
         });
         applyRes(resMaster.getState().w, resMaster.getState().h, 1);
-        refreshGallery();
+        refreshGallery(true, { hard: true });
 
         // For T2V without a saved reference image, default to "No image"
         // (black frame at chosen resolution). User can still pick gallery/upload
@@ -1462,40 +2777,131 @@ app.registerExtension({
         onOpenFolder: pickFolder,
         onDropFile: loadFile,
         onSelect: (name) => loadGalleryImage(name),
-        onRefresh: () => refreshGallery(true),
+        onRefresh: () => refreshGallery(true, { hard: true, status: true }),
       });
       applyRes(resMaster.getState().w, resMaster.getState().h, resScale);
-      refreshGallery();
+      refreshGallery(true, { hard: true });
       scheduleLayout();
     }
 
     $("#gpl-intent")?.addEventListener("input", () => sw("user_intent", $("#gpl-intent").value.trim()));
+    // LoRA trigger keywords (separate from free intent)
+    try {
+      const savedTrig = localStorage.getItem("pfld_lora_triggers") || "";
+      if ($("#gpl-lora-trig") && savedTrig) $("#gpl-lora-trig").value = savedTrig;
+    } catch { /* */ }
+    $("#gpl-lora-trig")?.addEventListener("input", () => {
+      const v = ($("#gpl-lora-trig")?.value || "").trim();
+      try { localStorage.setItem("pfld_lora_triggers", v); } catch { /* */ }
+    });
+    $("#gpl-lora-trig")?.addEventListener("change", () => {
+      const v = ($("#gpl-lora-trig")?.value || "").trim();
+      try { localStorage.setItem("pfld_lora_triggers", v); } catch { /* */ }
+    });
     $("#gpl-out")?.addEventListener("input", () => {
       draftPrompt = $("#gpl-out").value;
       sw("confirmed_prompt", draftPrompt);
     });
 
+    /** Old shot-script layout: blank line between action beats.
+     *  Never flatten existing newlines first — that caused "looked good then
+     *  collapsed to one paragraph" after the final pass. */
+    function formatScriptLayout(text) {
+      let s = (text || "").replace(/\r\n/g, "\n").trim();
+      if (!s) return s;
+
+      // Insert breaks at action boundaries even when the model skips periods
+      s = s.replace(
+        /(["”])\s*(?=(She|He|They|The view|A hand|Hands|The man|The woman|A woman|A man)\b)/g,
+        "$1\n\n"
+      );
+      s = s.replace(
+        /([.!?])\s+(?=(She|He|They|The view|A hand|Hands|The man|The woman|A woman|A man|Eye-level|Use the provided)\b)/g,
+        "$1\n\n"
+      );
+
+      // Prefer existing line structure (do NOT crush \n into spaces)
+      let lines = s.split(/\n+/).map((l) => l.replace(/[ \t]{2,}/g, " ").trim()).filter(Boolean);
+      if (lines.length < 2) {
+        // true single wall — split on sentences lightly
+        const flat = lines[0] || s;
+        const parts = [];
+        let buf = "", inQ = false;
+        for (let i = 0; i < flat.length; i++) {
+          const ch = flat[i];
+          if (ch === '"') inQ = !inQ;
+          buf += ch;
+          if (!inQ && (ch === "." || ch === "!" || ch === "?")) {
+            const nxt = flat[i + 1] || "";
+            if (!nxt || /\s/.test(nxt)) {
+              if (buf.trim()) parts.push(buf.trim());
+              buf = "";
+              while (i + 1 < flat.length && /\s/.test(flat[i + 1])) i++;
+            }
+          }
+        }
+        if (buf.trim()) parts.push(buf.trim());
+        lines = parts.length ? parts : lines;
+      }
+
+      const actionRe = /^(She|He|They|The view|A hand|Hands|Both hands|Eye-level|Use the provided|A (woman|man|person|muscular)|The (man|woman|view))\b/i;
+      const speechRe = /^(She|He|They)\s+(says|murmurs|whispers|shouts|yells|asks|answers|laughs|breathes|groans|moans|whimpers|gasps)\b/i;
+      const sections = [];
+      let i = 0;
+      if (lines[0] && /use the provided start image/i.test(lines[0])) {
+        sections.push(lines[0]);
+        i = 1;
+        if (i < lines.length && /^Eye-level\b/i.test(lines[i])) {
+          let open = lines[i++];
+          if (i < lines.length && /^(A |An |The )?(woman|man|person|muscular)/i.test(lines[i])) {
+            open += " " + lines[i++];
+          }
+          sections.push(open);
+        }
+      }
+      while (i < lines.length) {
+        const sent = lines[i];
+        const speechOnly = speechRe.test(sent) && sent.includes('"');
+        if (sections.length && speechOnly && !sections[sections.length - 1].includes('"')) {
+          sections[sections.length - 1] += " " + sent;
+        } else if (actionRe.test(sent) || speechOnly || !sections.length) {
+          sections.push(sent);
+        } else {
+          sections[sections.length - 1] += " " + sent;
+        }
+        i++;
+      }
+      return sections
+        .map((x) => x.replace(/,\s*\./g, ".").replace(/\s{2,}/g, " ").trim())
+        .filter(Boolean)
+        .join("\n\n");
+    }
+
     function commitOutput(text) {
-      const t = (text || "").trim();
+      const t = formatScriptLayout(text || "");
       sw("confirmed_prompt", t);
+      if ($("#gpl-out") && t) $("#gpl-out").value = t;
+      draftPrompt = t;
       return t;
     }
 
-    async function compose() {
+    async function compose(opts = {}) {
+      const refine = !!opts.refine;
       if (generating) { abortCtrl?.abort(); return; }
       const intent = ($("#gpl-intent")?.value || "").trim();
-      if (!intent) { setSt("Write intent first."); return; }
+      if (!intent) { setSt(refine ? "Write the revision request in Intent." : "Write intent first."); return; }
       if (!backendReady()) return;
-      if (videoMode === "i2v" && !hasImage()) { setSt("I2V needs an image."); return; }
+      const prior = (draftPrompt || $("#gpl-out")?.value || gw("confirmed_prompt")?.value || "").trim();
+      if (refine && !prior) { setSt("Refine needs an existing script — Generate first."); return; }
+      if (videoMode === "i2v" && !hasImage() && !refine) { setSt("I2V needs an image."); return; }
 
-      // Instant visual acknowledgement — flip the button and show a pulsing
-      // status the moment the click is validated, BEFORE the (slow) image
-      // encode + saveConn run, so there's no dead 3s where nothing changes.
       generating = true;
       const btn = $("#gpl-gen");
+      const rbtn = $("#gpl-refine");
       btn.textContent = "Stop";
       btn.classList.add("stop");
-      setSt(videoMode === "i2v" ? "Preparing image…" : "Starting…");
+      if (rbtn) rbtn.disabled = true;
+      setSt(refine ? "Preparing refine…" : (videoMode === "i2v" ? "Preparing image…" : "Starting…"));
       if ($("#gpl-st")) $("#gpl-st").classList.add("working");
 
       syncModels();
@@ -1505,31 +2911,47 @@ app.registerExtension({
       sw("scenario", $("#gpl-scn")?.value);
       sw("environment", $("#gpl-env")?.value);
       sw("camera_move", $("#gpl-cam")?.value);
+      sw("cast", castMode);
+      sw("lead_gender", $("#gpl-lead")?.value || leadGender);
+      try { sw("video_style", $("#gpl-style")?.value || "None — off (no style path)"); } catch (_) {}
+      sw("accent_mode", $("#gpl-accent")?.value || accentMode);
+      try { sw("accent_partner", $("#gpl-accent-partner")?.value || accentPartner || "off"); } catch (_) {}
+      try {
+        sw("motion_level", INTENSITY_LEVELS.find((x) => x.k === motionLevel)?.lab || "Normal");
+        sw("mouth_heat", INTENSITY_LEVELS.find((x) => x.k === mouthHeat)?.lab || "Normal");
+        sw("intensity", levelToEnergy(motionLevel));
+      } catch (_) {}
       if (!isInputWired("duration_s")) sw("duration_s", getDur());
       if (resMaster) applyRes(resMaster.getState().w, resMaster.getState().h, resScale);
 
       abortCtrl = new AbortController();
-      $("#gpl-out").value = "";
-      let text = "";
+      if (!refine) $("#gpl-out").value = "";
+      let text = refine ? "" : "";
 
       const body = {
         ...buildComposeBody(),
-        refine: false,
-        prior_prompt: "",
+        refine,
+        prior_prompt: refine ? prior : "",
         user_intent: intent,
-        temperature: parseFloat($("#gpl-temp")?.value) || 0.55,
+        temperature: parseFloat($("#gpl-temp")?.value) || (refine ? 0.4 : 0.55),
       };
 
       try {
-        setSt("Connecting…");
-        body.image_b64 = videoMode === "i2v" ? await visionB64ForCompose() : "";
-        if (videoMode === "i2v" && !body.image_b64) {
-          generating = false;
-          btn.textContent = "Generate";
-          btn.classList.remove("stop");
-          if ($("#gpl-st")) $("#gpl-st").classList.remove("working");
-          setSt("I2V needs an image.");
-          return;
+        setSt(refine ? "Revising…" : "Connecting…");
+        if (videoMode === "i2v" && !refine) {
+          body.image_b64 = await visionB64ForCompose();
+          if (!body.image_b64) {
+            generating = false;
+            btn.textContent = "Generate";
+            btn.classList.remove("stop");
+            if (rbtn) rbtn.disabled = false;
+            if ($("#gpl-st")) $("#gpl-st").classList.remove("working");
+            setSt("I2V needs an image.");
+            return;
+          }
+        } else if (videoMode === "i2v" && refine && hasImage()) {
+          // Optional vision on refine — skip to keep fast; prior text is enough
+          body.image_b64 = "";
         }
         const resp = await fetch("/pfld/generate_stream", {
           method: "POST",
@@ -1549,6 +2971,7 @@ app.registerExtension({
         const reader = resp.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
+        let finalFromDone = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1561,18 +2984,70 @@ app.registerExtension({
             let ev;
             try { ev = JSON.parse(ln.slice(5)); } catch { continue; }
             if (ev.type === "status") setSt(ev.msg);
+            else if (ev.type === "replace") {
+              // Densify / full rewrite — wipe streamed first pass
+              text = (ev.text != null) ? String(ev.text) : "";
+              if ($("#gpl-out")) $("#gpl-out").value = text;
+            }
             else if (ev.type === "delta") {
               text += ev.text;
               $("#gpl-out").value = text;
               setSt(`${text.length} chars…`);
             }
+            else if (ev.type === "done") {
+              // Final box = repaired (or raw if scrub off). Stream already showed raw tokens.
+              if (ev.prompt) finalFromDone = ev.prompt;
+              if (ev.raw_prompt && ev.repaired) {
+                // Stash raw so user can compare (status + optional copy via console)
+                try { window.__pfldLastRaw = ev.raw_prompt; } catch { /* */ }
+              }
+              if (ev.continuity) {
+                lastContinuity = ev.continuity;
+                sw("continuity_state", lastContinuity);
+              }
+              if (ev.seed != null && Number.isFinite(Number(ev.seed))) {
+                lastSeed = Number(ev.seed) >>> 0;
+                try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
+                paintSeedUI();
+              }
+              // Surface Random resolves + repair note
+              const rBits = [];
+              if (ev.resolved_scenario && ev.scenario_raw
+                  && String(ev.resolved_scenario) !== String(ev.scenario_raw)) {
+                rBits.push("scn " + String(ev.resolved_scenario).slice(0, 48));
+              }
+              if (ev.resolved_environment && ev.environment_raw
+                  && String(ev.resolved_environment) !== String(ev.environment_raw)) {
+                rBits.push("env " + String(ev.resolved_environment).slice(0, 36));
+              }
+              if (ev.repair === false) rBits.push("raw (no scrub)");
+              else if (ev.repaired) rBits.push("scrubbed");
+              if (ev.self_check && !ev.self_check.error) {
+                const sc = ev.self_check;
+                rBits.push(`qa ${sc.pass_count || 0}✓/${sc.fail_count || 0}✗`);
+                if (sc.fixed) rBits.push("qa-fixed");
+                try { window.__pfldLastSelfCheck = sc; } catch { /* */ }
+              }
+              if (rBits.length) setSt((rBits[0].startsWith("scn") || rBits[0].startsWith("env") ? "Random → " : "") + rBits.join(" · "));
+            }
+            else if (ev.type === "self_check") {
+              try { window.__pfldLastSelfCheck = ev; } catch { /* */ }
+              const nP = ev.pass_count || 0, nF = ev.fail_count || 0;
+              setSt(`Self-check ${nP} pass / ${nF} fail${ev.fixed ? " · fixing…" : " · report"}`);
+            }
             else if (ev.type === "error") throw new Error(ev.msg);
           }
         }
-        draftPrompt = text.trim();
+        draftPrompt = (finalFromDone || text).trim();
         $("#gpl-out").value = draftPrompt;
         const committed = commitOutput(draftPrompt);
-        setSt(committed ? `✦ ${committed.length} chars → pack output` : "Empty.");
+        pushHistory(intent, committed);
+        syncLive();
+        const tag = refine ? "refined" : "forged";
+        const scTag = selfCheckOn ? (selfCheckMode === "report" ? " · qa-report" : " · qa") : "";
+        setSt(committed
+          ? `✦ ${committed.length} chars ${tag} → pack · seed ${lastSeed}${keepWarm ? " · warm" : ""}${detailerOn ? " · det" : ""}${repairOn ? "" : " · raw"}${scTag}`
+          : "Empty.");
       } catch (e) {
         if (e.name !== "AbortError") setSt("Error: " + e.message);
         else setSt("Stopped.");
@@ -1580,12 +3055,14 @@ app.registerExtension({
         generating = false;
         btn.textContent = "Generate";
         btn.classList.remove("stop");
+        if (rbtn) rbtn.disabled = false;
         if ($("#gpl-st")) $("#gpl-st").classList.remove("working");
         scheduleLayout();
       }
     }
 
-    $("#gpl-gen").onclick = compose;
+    $("#gpl-gen").onclick = () => compose({ refine: false });
+    $("#gpl-refine")?.addEventListener("click", () => compose({ refine: true }));
 
     function restoreSession() {
       const cp = gw("confirmed_prompt")?.value;
@@ -1596,8 +3073,24 @@ app.registerExtension({
       if (vm) videoMode = vm;
       const fn = (gw("image_filename")?.value || "").trim();
       if (fn) imgFilename = fn;
+      const cont = (gw("continuity_state")?.value || "").trim();
+      if (cont) lastContinuity = cont;
+      const cs = gw("cast")?.value;
+      if (cs) setCast(cs);
+      const lg = gw("lead_gender")?.value;
+      if (lg && $("#gpl-lead")) { $("#gpl-lead").value = lg; leadGender = lg; }
+      const vs = gw("video_style")?.value;
+      if (vs && $("#gpl-style")) {
+        try {
+          $("#gpl-style").value = vs;
+          $("#gpl-style")._pfldSyncStyleBtn?.();
+        } catch (_) {}
+      }
+      const am = gw("accent_mode")?.value;
+      if (am && $("#gpl-accent")) { $("#gpl-accent").value = am; accentMode = am; }
       setVideoMode(videoMode);
       if (imgFilename && imgFilename !== NO_IMAGE_NAME) loadGalleryImage(imgFilename);
+      paintHistory();
       syncLive();
     }
     restoreSession();
@@ -1609,23 +3102,29 @@ app.registerExtension({
       _origConfigure?.apply(this, arguments);
       setTimeout(() => {
         restoreSession();
-        // Honor the size saved in the workflow — stop auto-layout inflating it.
+        loadPinnedSize();
         const s = (info && info.size) || node.size;
-        if (s && s[1] > 100) {
-          node._userW = Math.max(s[0], LAYOUT.minNodeW);
-          node._savedH = s[1];
-          node._userResized = true;
-          node.setSize([node._userW, s[1]]);
-        }
-        scheduleLayout();
+        // Restore saved pin (free-resize range); prefer localStorage, else workflow size
+        const h = clampNodeH(node._savedH || s?.[1] || NODE_DEF_H);
+        const w = Math.max(node._userW || s?.[0] || NODE_DEF_W, LAYOUT.minNodeW);
+        applyNodeSize(w, h, true);
+        paintSizeSliders();
+        fitContainer();
       }, 0);
     };
 
     const tick = setInterval(() => {
-      if (node._userW && node.size && node.size[0] < node._userW - 1) node.setSize([node._userW, node.size[1]]);
+      // Hold user pin only — never re-measure content to grow.
+      // onResize already wrote _savedH, so this won't fight free shrink/grow.
+      if (node.size && node._savedH) {
+        const h = clampNodeH(node._savedH);
+        const w = node._userW || node.size[0] || NODE_DEF_W;
+        if (Math.abs(node.size[1] - h) > 2 || Math.abs(node.size[0] - w) > 2) {
+          node.setSize([w, h]);
+        }
+      }
       syncLive();
-      snapNodeHeight();
-    }, 500);
+    }, 800);
 
     const origRemoved = node.onRemoved;
     node.onRemoved = function () {
@@ -1636,8 +3135,16 @@ app.registerExtension({
       if (origRemoved) origRemoved.apply(this, arguments);
     };
 
-    requestAnimationFrame(() => { measureFloor(); fitContainer(); });
-    setTimeout(scheduleLayout, 400);
+    requestAnimationFrame(() => {
+      applyNodeSize(node._userW || NODE_DEF_W, clampNodeH(node._savedH || NODE_DEF_H), true);
+      fitContainer();
+      paintSizeSliders();
+    });
+    setTimeout(() => {
+      applyNodeSize(node._userW || NODE_DEF_W, clampNodeH(node._savedH || NODE_DEF_H), true);
+      fitContainer();
+      paintSizeSliders();
+    }, 400);
     } catch (err) {
       console.error("[PromptForgeLD] UI init failed:", err);
     }

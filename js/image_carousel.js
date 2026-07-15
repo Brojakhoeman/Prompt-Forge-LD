@@ -213,14 +213,32 @@ export function buildImageCarousel(opts) {
     _ro.observe(viewport);
   }
 
-  function setImages(list, selectedName) {
-    const currentCustom = customImageUrls[selectedName] || (focus < images.length && customImageUrls[images[focus]] ? customImageUrls[images[focus]] : null);
+  function clearAllCards() {
+    // Full wipe — needed when the input folder changes so thumb URLs / same
+    // relative names don't keep stale <img> elements from the previous folder.
+    for (const [, el] of cardEls) {
+      try { el.remove(); } catch { /* */ }
+    }
+    cardEls.clear();
+    track.querySelectorAll(".gpl-carousel-card").forEach((e) => e.remove());
+    customImageUrls = {};
+  }
+
+  function setImages(list, selectedName, opts) {
+    const hard = !!(opts && opts.hardReset);
+    const currentCustom = hard
+      ? null
+      : (customImageUrls[selectedName] || (focus < images.length && customImageUrls[images[focus]] ? customImageUrls[images[focus]] : null));
     images = Array.isArray(list) ? list.slice() : [];
 
     // clean previous no-image cards (to support dups at start+end)
     track.querySelectorAll(`.gpl-carousel-card[data-name="${NO_IMAGE_NAME}"]`).forEach(e => e.remove());
 
-    pruneCards();
+    if (hard) {
+      clearAllCards();
+    } else {
+      pruneCards();
+    }
     customImageUrls = {};
     if (selectedName && currentCustom) {
       customImageUrls[selectedName] = currentCustom;
@@ -237,6 +255,22 @@ export function buildImageCarousel(opts) {
       focus = images.indexOf(NO_IMAGE_NAME);
     } else if (focus >= images.length || focus < 0) {
       focus = Math.max(0, images.length - 1);
+    }
+    layout();
+  }
+
+  /** Force every visible card to reload src (cache-busted URL from parent). */
+  function rebindSrcs(urlFn) {
+    if (typeof urlFn !== "function") return;
+    for (const [name, el] of cardEls) {
+      if (name === NO_IMAGE_NAME) continue;
+      const im = el.querySelector("img");
+      if (!im) continue;
+      if (customImageUrls[name]) {
+        im.src = customImageUrls[name];
+      } else {
+        im.src = urlFn(name);
+      }
     }
     layout();
   }
@@ -280,5 +314,5 @@ export function buildImageCarousel(opts) {
   }
 
   layout();
-  return { setImages, setFocus, setCustomImage, resync, destroy, el: wrap };
+  return { setImages, setFocus, setCustomImage, rebindSrcs, clearAllCards, resync, destroy, el: wrap };
 }
