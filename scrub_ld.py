@@ -404,6 +404,7 @@ def _ensure_section_breaks(s: str) -> str:
     if re.search(r"use the provided start image", sentences[0], re.I):
         sections.append(sentences[0])
         i = 1
+        # POV open line
         if i < len(sentences) and re.match(r"^Eye-level\b", sentences[i], re.I):
             open_bits = [sentences[i]]
             i += 1
@@ -414,6 +415,14 @@ def _ensure_section_breaks(s: str) -> str:
                 open_bits.append(sentences[i])
                 i += 1
             sections.append(" ".join(open_bits))
+        # Non-POV I2V identity open — keep off the anchor line so music can plant here
+        elif i < len(sentences) and re.match(
+            r"^(?:A |An |The )?(?:young\s+)?(?:woman|man|person|girl|guy|blonde|brunette|"
+            r"figure|muscular|she|he)\b",
+            sentences[i], re.I,
+        ):
+            sections.append(sentences[i])
+            i += 1
 
     while i < len(sentences):
         sent = sentences[i]
@@ -929,8 +938,216 @@ def _scrub_silent_speech(s: str) -> str:
     return s.strip()
 
 
+# Score / track cues — used to detect whether open already planted music
+_MUSIC_CUE_RE = re.compile(
+    r"\b(?:music|soundtrack|score|bpm|bass|kick|groove|techno|edm|hip-?hop|r&b|"
+    r"rnb|synth|disco|reggae|metal|orchestral|ambient|trailer|four-on-the-floor|"
+    r"hi-?hat|808|pad(?:s)?|speakers?|under the room|under the mix|in the mix|"
+    r"beat(?:s)?|pulse(?:s|ing)?|thump(?:s|ing)?)\b",
+    re.I,
+)
+
+
+def _ensure_music_open_plant(
+    s: str, *, music_on: bool = False, music_key: str = "", music_background: bool = False,
+) -> str:
+    """If music is selected but the first body section has no score cues, cement a plant there.
+
+    Also soft-adds a mid-clip reminder if the whole first half is mute and only late sections
+    mention music (or nothing does).
+    """
+    if not music_on or not (s or "").strip():
+        return s
+    try:
+        from .music_ld import music_open_plant_phrase
+    except ImportError:
+        try:
+            from music_ld import music_open_plant_phrase
+        except ImportError:
+            return s
+
+    plant = music_open_plant_phrase(music_key or "", background=bool(music_background))
+    if not plant:
+        return s
+
+    # Split into blank-line sections (preserve layout)
+    chunks = re.split(r"\n\s*\n", s.strip())
+    if not chunks:
+        return s
+
+    # Find first body section (skip pure I2V anchor-only chunk)
+    body_i = 0
+    for i, ch in enumerate(chunks):
+        t = ch.strip()
+        if not t:
+            continue
+        if re.search(r"use the provided start image", t, re.I) and len(t) < 120:
+            body_i = i + 1
+            continue
+        body_i = i
+        break
+    if body_i >= len(chunks):
+        # Only anchor — append plant as its own section after
+        return s.rstrip() + "\n\n" + plant
+
+    first = chunks[body_i].strip()
+    # If open already has music cues, leave it
+    if _MUSIC_CUE_RE.search(first):
+        # Still ensure through-line: if music only in first and nowhere else late, optional mid tip
+        rest = "\n\n".join(chunks[body_i + 1 :])
+        if rest and not _MUSIC_CUE_RE.search(rest):
+            # Append soft mid reminder to a middle section if we have ≥3 body sections after open
+            after = chunks[body_i + 1 :]
+            if len(after) >= 2:
+                mid_i = body_i + 1 + (len(after) // 2)
+                if mid_i < len(chunks) and not _MUSIC_CUE_RE.search(chunks[mid_i]):
+                    mid_plant = (
+                        "A faint pulse still under the room."
+                        if music_background
+                        else "The bass still drives under the room."
+                    )
+                    chunks[mid_i] = chunks[mid_i].rstrip() + " " + mid_plant
+                    return "\n\n".join(c.strip() for c in chunks if c.strip())
+        return s
+
+    # Cement plant onto the identity open (same section)
+    chunks[body_i] = first.rstrip().rstrip(".") + ". " + plant
+    return "\n\n".join(c.strip() for c in chunks if c.strip())
+
+
+def _scrub_music_background(s: str) -> str:
+    """When Background (quiet) music is on: kill shout-over-track + loud-score clichés.
+
+    Conservative rewrites only — keeps story/intent (crowd can still cheer).
+    """
+    if not s:
+        return s
+
+    # Delivery framed as competing with the track → speech verb; keep any existing (bracket):
+    # e.g. "shouting over the heavy bass (approving):" → "says (approving):"
+    def _keep_bracket(m):
+        br = (m.group(1) or "").strip()
+        return f"says {br}" if br else "says (intense)"
+
+    s = re.sub(
+        r"\b(?:his|her|their)\s+voice\s+a\s+rough\s+command\s+shouted\s+over\s+the\s+"
+        r"(?:music|bass|track|mix)\s*(\([^)]+\)\s*:)?",
+        lambda m: f"his voice rough, he {_keep_bracket(m)}",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(?:a\s+)?(?:rough\s+)?command\s+shouted\s+over\s+the\s+"
+        r"(?:music|bass|track|mix)\s*(\([^)]+\)\s*:)?",
+        _keep_bracket,
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\bshout(?:ing|s|ed)?\s+over\s+the\s+(?:heavy\s+|loud\s+)?"
+        r"(?:bass|music|track|speakers|kick|drop|beat|mix)\s*(\([^)]+\)\s*:)?",
+        _keep_bracket,
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\byell(?:ing|s|ed)?\s+over\s+the\s+(?:heavy\s+|loud\s+)?"
+        r"(?:bass|music|track|speakers|kick|drop|beat|mix)\s*(\([^)]+\)\s*:)?",
+        lambda m: f"calls out {m.group(1).strip()}" if m.group(1) else "calls out",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(?:called|calls|calling)\s+(?:out\s+)?over\s+the\s+"
+        r"(?:music|bass|track|mix|drop|beat)\b",
+        "calls out",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(?:talk(?:s|ing)?|speaks?|speaking)\s+over\s+the\s+(?:loud\s+)?"
+        r"(?:music|bass|track|mix|beat)\b",
+        "says",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\braised\s+(?:his|her|their)\s+voice\s+over\s+the\s+(?:music|bass|track|mix)\b",
+        "says",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\blines?\s+shouted\s+over\s+the\s+(?:music|bass|track|mix)\b",
+        "lines said (intense)",
+        s,
+        flags=re.I,
+    )
+
+    # Loud score descriptors → quiet under-score
+    loud_score = [
+        (
+            r"\b[Aa]\s+loud\s+techno\s+beat\s+pulses?\s+through\s+the\s+room\b",
+            "A faint techno pulse sits under the room",
+        ),
+        (
+            r"\b(?:loud|deafening|booming|blaring|thunderous)\s+(techno|edm|electronic)\s+"
+            r"(beat|pulse|thump|track|music)\b",
+            r"faint \1 \2",
+        ),
+        (
+            r"\b(?:loud|deafening|booming|blaring)\s+(bass|beat|music|soundtrack|track)\b",
+            r"soft \1",
+        ),
+        (
+            r"\b(?:bass|kick|music|track)\s+(?:loud\s+enough\s+to\s+)?"
+            r"(?:vibrate|vibrating|shaking|rattl(?:e|ing))\s+"
+            r"(?:the\s+)?(?:glass|walls?|floor|room|chest)\b",
+            "faint bass under the room",
+        ),
+        (
+            r"\b(?:thumping|pounding|pulsing)\s+(?:through|across)\s+the\s+(?:room|floor|walls?)\b",
+            "soft under the room",
+        ),
+        (
+            r"\b(?:heavy|deafening|thunderous)\s+bass\b",
+            "soft bass under the mix",
+        ),
+        (
+            r"\bmusic\s+(?:blasts?|blares?|roars?|pounds?)\b",
+            "music hums quietly",
+        ),
+        (
+            r"\b(?:the\s+)?(?:speakers?|PA)\s+(?:blast|blare|roar|shake)\b",
+            "soft speakers under the room",
+        ),
+        (
+            r"\bbass\s+still\s+thumping\b",
+            "faint bass still under the room",
+        ),
+        (
+            r"\bthumping\s+kicks?\b",
+            "soft kick pulse",
+        ),
+    ]
+    for pat, rep in loud_score:
+        s = re.sub(pat, rep, s, flags=re.I)
+
+    # Clean doubled soft/faint / grammar glitches from stacked replaces
+    s = re.sub(r"\b(faint|soft|quiet)\s+\1\b", r"\1", s, flags=re.I)
+    s = re.sub(r"\bsays\s+\(intense\)\s*\(intense\)", "says (intense)", s, flags=re.I)
+    s = re.sub(r"\bsaid\s+\(intense\)\s*\(intense\)", "said (intense)", s, flags=re.I)
+    # "He said, says (intense):" / "she says, says (" after shout-over rewrites
+    s = re.sub(r"\b(said|says|calls out),\s+says\b", r"\1", s, flags=re.I)
+    s = re.sub(r"\b(said|says),\s+calls out\b", r"\1", s, flags=re.I)
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    return s
+
+
 def scrub(text: str, *, mode: str = "i2v", pov: bool = False,
-          intent: str = "", scenario: str = "", dialogue_tier: str = "standard") -> str:
+          intent: str = "", scenario: str = "", dialogue_tier: str = "standard",
+          music_background: bool = False, music_on: bool = False,
+          music_key: str = "") -> str:
     """Clean a finished script. Returns stripped text."""
     s = (text or "").strip()
     if not s:
@@ -1016,6 +1233,16 @@ def scrub(text: str, *, mode: str = "i2v", pov: bool = False,
     s = _scrub_oral_pull_off_wordiness(s)
     s = _scrub_false_pov_voice(s, pov=bool(pov))
     s = _scrub_speech_verb_glitches(s)
+    # Music selected: cement open plant + optional mid through-line before volume soften
+    if music_on or music_background:
+        s = _ensure_music_open_plant(
+            s,
+            music_on=bool(music_on or music_background),
+            music_key=music_key or "",
+            music_background=bool(music_background),
+        )
+    if music_background:
+        s = _scrub_music_background(s)
     s = _fix_dialogue_caps(s)
     s = _fix_quote_terminal_punct(s)
     s = _scrub_meta_quality_tags(s)

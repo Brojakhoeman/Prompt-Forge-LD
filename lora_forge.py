@@ -58,6 +58,7 @@ class LoraForgeLD:
             "hidden": {"available_loras": (lora_list,)}
         }
 
+    # Outputs: model + clip only. (No trigger_words / loaded_keys_info — experiments removed.)
     RETURN_TYPES = ("MODEL", "CLIP")
     RETURN_NAMES = ("model", "clip")
     FUNCTION = "apply_stack"
@@ -72,19 +73,13 @@ class LoraForgeLD:
             return (m, c)
         if not isinstance(data, list):
             return (m, c)
-        triggers = []
         for row in data:
             if not row.get("on") or row.get("lora") in ("None", "", None):
                 continue
             lora_str = float(row.get("str", 1.0))
             vs = float(row.get("vs", 1.0))
             as_ = float(row.get("as", 1.0))
-            trig = (row.get("trig") or row.get("trigger") or "").strip()
-            if trig:
-                triggers.append(trig)
             m, c = _apply_slot(m, c, row["lora"], lora_str, vs, as_)
-        if triggers:
-            print(f"[LoraForgeLD] trigger words (wire into prompt if needed): {', '.join(triggers)}")
         return (m, c)
 
 

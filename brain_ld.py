@@ -664,6 +664,13 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
         )
         parts.append(_vision_honesty_extra(mode))
 
+    # MUSIC as early as possible (after I2V anchor rule) so the model plants groove first
+    _music_bg = bool(music_block and (
+        "BACKGROUND" in (music_block or "") or "QUIET UNDER" in (music_block or "")
+    ))
+    if (music_block or "").strip():
+        parts.append("\n" + music_block.strip() + "\n")
+
     parts.append(_CANON)
     parts.append(inject_state_order())
     parts.append(_animation_lock(intent, scenario_block, mode))
@@ -678,6 +685,36 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
 
     parts.append("\n" + (_SECTION_FORMAT_SILENT if silent else _SECTION_FORMAT))
     parts.append(_i2v_open() if mode == "i2v" else _t2v_open())
+    # Music is part of the OPEN (with vision/identity) — not a mid-clip afterthought
+    if (music_block or "").strip():
+        try:
+            from .music_ld import music_genre_label, music_open_plant_phrase
+        except ImportError:
+            from music_ld import music_genre_label, music_open_plant_phrase
+        _g = music_genre_label(music_key or "")
+        _plant = music_open_plant_phrase(music_key or "", background=_music_bg)
+        if _music_bg:
+            parts.append(
+                "\n━━ MUSIC IN THE OPEN (BACKGROUND — CEMENT + THROUGH-LINE) ━━\n"
+                f"Genre on: {_g}. The FIRST body section after the I2V anchor (if any) MUST include BOTH:\n"
+                "  (a) identity + pose from the still / intent (vision honesty), AND\n"
+                "  (b) quiet music already under the room — one short clause in that same section.\n"
+                f"Example plant clause: \"{_plant}\"\n"
+                "Do NOT open with only who/pose and first mention music in section 3+. "
+                "After the open, re-touch the quiet score at least once mid-clip and once late "
+                "(short clause: faint bass still under / soft pulse still there).\n"
+            )
+        else:
+            parts.append(
+                "\n━━ MUSIC IN THE OPEN (IN THE MIX — CEMENT + THROUGH-LINE) ━━\n"
+                f"Genre on: {_g}. The FIRST body section after the I2V anchor (if any) MUST include BOTH:\n"
+                "  (a) identity + pose from the still / intent (vision honesty), AND\n"
+                "  (b) the soundtrack already playing — kick/bass/groove from the MUSIC preset.\n"
+                f"Example plant clause: \"{_plant}\"\n"
+                "Do NOT open with only who/pose and first mention music in section 3+. "
+                "After the open, keep the track alive: re-mention pulse/bass/groove mid-clip and later "
+                "(on a strong action beat is ideal).\n"
+            )
     parts.append(
         f"For a ~{write_dur:.0f}s write-length (UI wall-clock is longer — leave a silent tail), "
         f"expect roughly {lo}–{hi} sections — but let the action decide, not the clock.\n"
@@ -718,6 +755,7 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
         intent, scenario_block or "",
         music_key=music_key or "",
         music_text=music_block or "",
+        music_background=_music_bg,
         seed=int(seed or 0),
     )
     if _db:
@@ -762,6 +800,17 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
     if (style_block or "").strip():
         parts.append("\n" + style_block.strip() + "\n")
     parts.append(intensity.combined_energy_block(motion_lv, mouth_lv, explicit=explicit))
+    # After mouth-heat (which can say "shouted"): re-assert quiet score when Background music is on
+    if _music_bg:
+        parts.append(
+            "\n━━ MUSIC VOLUME LOCK (BACKGROUND — BEATS MOUTH HEAT) ━━\n"
+            "Mouth heat may make dialogue filthy, urgent, or barked in WORDING and brackets "
+            "((intense) (urgent) (rough)). Do NOT write: shouted over the music, yelling over the bass, "
+            "called over the drop, loud techno pulsing through the room, heavy bass drowning speech, "
+            "or any line that frames speech as competing with a loud track. "
+            "Music stays a faint continuous under-score from the MUSIC block. "
+            "Crowd noise / cheers from INTENT are people energy — not an excuse to make the soundtrack loud.\n"
+        )
     parts.append(_dialogue_budget(dialogue_tier, write_dur))
 
     # ACCENT LOCK(s) before dialogue bank — fluent pool lines must not erase the accent
@@ -872,14 +921,7 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
         parts.append("\n" + scenario_block.strip() + "\n")
     if camera_block:
         parts.append("\n" + camera_block.strip() + "\n")
-    if music_block:
-        parts.append(
-            "\n━━ MUSIC / SOUNDTRACK ━━\n" + music_block.strip() +
-            "\nSync the body's rhythm to this music — motion lands on its beats. "
-            "If VIDEO STYLE is Music-video performance, this soundtrack is the spine of the clip "
-            "(pose hits, drops, chorus energy). "
-            "Singing only if the intent asks; otherwise the music scores / drives motion.\n"
-        )
+    # music already injected EARLY (above) when present
 
     parts.append(
         "\n━━ PRECEDENCE (INTENT FIRST — FILL GAPS ONLY) ━━\n"
@@ -900,6 +942,7 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
                cast="pair", continuity_state="", accent_mode="auto", energy=5,
                motion_level=None, mouth_heat=None, accent_partner=None,
                detailer=False, lora_triggers="", seed=None,
+               music_key="", music_background=False,
                _duration_is_write=False):
     intent = (intent or "").strip() or "Continue the scene naturally."
     mode = (mode or "i2v").lower()
@@ -1044,6 +1087,24 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
     det_rem = detailer_remember_line(detailer, mode=mode)
     if det_rem:
         remember.append(det_rem)
+    # Music open + through-line (only when a preset is selected)
+    try:
+        from .music_ld import music_is_on, music_genre_label, music_open_plant_phrase
+    except ImportError:
+        from music_ld import music_is_on, music_genre_label, music_open_plant_phrase
+    if music_is_on(music_key or ""):
+        _g = music_genre_label(music_key or "")
+        _plant = music_open_plant_phrase(music_key or "", background=bool(music_background))
+        if music_background:
+            remember.append(
+                f"• MUSIC BACKGROUND ({_g}): FIRST body section = identity/pose + quiet score in the SAME open "
+                f"(e.g. \"{_plant}\"). Re-touch faint bass/pulse mid-clip and late — never first-mention music in section 3+."
+            )
+        else:
+            remember.append(
+                f"• MUSIC IN THE MIX ({_g}): FIRST body section = identity/pose + track already playing in the SAME open "
+                f"(e.g. \"{_plant}\"). Keep pulse/bass/groove alive mid-clip and later — never bury the first music hit halfway."
+            )
     am = (accent_mode or "auto").lower().strip()
     ap = (accent_partner or "off").lower().strip() if accent_partner else "off"
     if am != "off" or ap not in ("", "off"):
@@ -1074,6 +1135,7 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
                    cast="pair", continuity_state="", accent_mode="auto", energy=5,
                    motion_level=None, mouth_heat=None, accent_partner=None,
                    detailer=False, lora_triggers="", seed=None,
+                   music_key="", music_background=False,
                    _duration_is_write=False):
     parts = []
     if has_vision and image_b64:
@@ -1171,6 +1233,7 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
             energy=energy, motion_level=motion_level, mouth_heat=mouth_heat,
             accent_partner=accent_partner, detailer=detailer,
             lora_triggers=lora_triggers, seed=seed,
+            music_key=music_key, music_background=music_background,
             _duration_is_write=_duration_is_write,
         )
     parts.append({"type": "text", "text": text})
@@ -1212,16 +1275,27 @@ def clean(text):
 
 
 def finalize(text, *, mode="i2v", intent="", pov=False, scenario="", dialogue_tier="standard",
-             repair=True):
+             repair=True, music_background=False, music_key="", music_on=None):
     """Post-LLM pass. repair=True runs CANON scrub (head/torso, silent strip, jumps…).
     repair=False returns only light clean (think-tags / fences) so you can inspect raw model text.
+    music_background=True softens loud-score / shout-over-music phrasing in the scrub pass.
+    music_key / music_on: if music is selected, scrub cements an open plant when the model forgot.
     """
     s = clean(text)
     if not repair:
         return s
+    if music_on is None:
+        try:
+            from .music_ld import music_is_on
+        except ImportError:
+            from music_ld import music_is_on
+        music_on = music_is_on(music_key or "")
     return canon_scrub(
         s, mode=mode, pov=bool(pov), intent=intent, scenario=scenario,
         dialogue_tier=dialogue_tier,
+        music_background=bool(music_background),
+        music_on=bool(music_on),
+        music_key=music_key or "",
     )
 
 

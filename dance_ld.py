@@ -1221,10 +1221,15 @@ _MUSIC_TEMPO_HINTS: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
-def music_tempo_hint(music_key: str = "", music_text: str = "") -> str:
+def music_tempo_hint(music_key: str = "", music_text: str = "", background: bool = False) -> str:
     blob = f"{music_key or ''} {music_text or ''}".lower()
     if not blob.strip() or blob.startswith("none"):
         return ""
+    if background or "background" in blob or "quiet under" in blob:
+        return (
+            "MUSIC TEMPO (background): soft score under the dance — do not force kick-hits on every move; "
+            "keep motion readable; music stays quiet and continuous."
+        )
     for cues, hint in _MUSIC_TEMPO_HINTS:
         if any(c in blob for c in cues):
             return hint
@@ -1291,6 +1296,7 @@ def dance_block(
     *,
     music_key: str = "",
     music_text: str = "",
+    music_background: bool = False,
     seed: int = 0,
     max_paths: int = 3,
     max_teases: int = 5,
@@ -1342,7 +1348,7 @@ def dance_block(
         )
 
     if wants_dance(intent, scenario) or paths:
-        mh = music_tempo_hint(music_key, music_text)
+        mh = music_tempo_hint(music_key, music_text, background=music_background)
         if mh:
             lines.append("\n" + mh)
 

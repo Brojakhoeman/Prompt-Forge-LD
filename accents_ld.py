@@ -7,11 +7,13 @@ English with a foreign/regional accent + OCCASIONAL native slips.
 Rules of the road (Grok bar):
   • Accent lives in GRAMMAR + RHYTHM + VOICE LINE — not phonetic garble.
   • LTX prints text literally: never "ze"/"zis"/"wery" comedy spelling.
-  • Native words are CONTEXT SLIPS (agreement, urge, surprise, intimate) —
+  • Each language has ~15 AD-LIBS (mini phrases/tags) seeded into the clip —
+    model sprinkles them naturally; user does not need to type "ja?" / "seen?" into Intent.
+  • Native words are CONTEXT SLIPS + AD-LIBS (agreement, urge, surprise, intimate) —
     not the same particle on every line ("ja?" spam is a failure).
-  • Never reuse the same native word or the same example line twice in one clip.
+  • Never reuse the same ad-lib/slip or the same example line twice in one clip.
   • First section: voice line. First spoken line: optional varied opener.
-  • Most lines are accented ENGLISH; slips are seasoning, not wallpaper.
+  • Most lines are accented ENGLISH; ad-libs are seasoning, not wallpaper.
   • T2V: CHARACTER_PROFILES seeds phenotype (hair/skin/build) per accent+gender so
     voice and face match (Scottish freckles ≠ Korean East-Asian features). Seed rotates.
   • I2V: start image wins on look — profiles do not override the still.
@@ -1468,6 +1470,191 @@ ACCENTS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  AD-LIBS PER LANGUAGE (~12–15 mini tags/phrases)
+#  Seasoning the model can drop naturally when the moment fits — so you do NOT
+#  need to type "ja?" / "seen?" / "bloodclaat" into Intent. Seed palette prioritises
+#  these; VARIETY LOCK still = each item at most once per clip (no particle spam).
+#  Merged into ACCENTS[k]["adlibs"] below. Hand-tuned banks beat auto-synth.
+# ─────────────────────────────────────────────────────────────────────────────
+ADLIBS_BANKS: dict[str, list[str]] = {
+    "korean": [
+        "응", "네", "좋아", "진짜?", "아이고", "자기야", "오빠", "언니",
+        "더", "빨리", "이리 와", "잠깐", "조금만", "미치겠어", "야…",
+    ],
+    "japanese": [
+        "うん", "はい", "そう", "ねえ", "ちょっと", "もっと", "来て", "だめ",
+        "えっ", "すごい", "あなた", "好き", "気持ちいい", "待って", "本当に",
+    ],
+    "mandarin": [
+        "嗯", "好", "对", "哎呀", "真的?", "快点", "过来", "别停",
+        "宝贝", "舒服", "等等", "慢点", "再来", "天啊", "就是这样",
+    ],
+    "thai": [
+        "ค่ะ", "ครับ", "นะ", "เร็ว", "มา", "อย่าหยุด", "ดีจัง", "ช้าๆ",
+        "อีก", "จ้ะ", "ว้าว", "จริงเหรอ", "ใกล้ๆ", "เบาๆ", "ตรงนั้น",
+    ],
+    "vietnamese": [
+        "ừ", "vâng", "được", "thôi", "nhanh lên", "lại đây", "đừng dừng",
+        "chậm thôi", "nữa đi", "trời ơi", "thật á?", "gần hơn", "nhẹ thôi", "đúng chỗ",
+    ],
+    "french": [
+        "oui", "ouais", "d'accord", "merde", "putain", "viens", "encore",
+        "doucement", "chéri", "chérie", "attends", "regarde", "comme ça", "plus fort", "là",
+    ],
+    "spanish_castilian": [
+        "vale", "sí", "joder", "hostia", "ven", "más", "despacio",
+        "cariño", "espera", "mira", "así", "otra vez", "no pares", "aquí", "coño",
+    ],
+    "spanish_latin": [
+        "sí", "claro", "órale", "joder", "ven", "más", "despacito",
+        "bebé", "espera", "mira", "así", "otra vez", "no pares", "aquí", "ay dios",
+    ],
+    "italian": [
+        "sì", "va bene", "cazzo", "dai", "ancora", "piano", "amore",
+        "aspetta", "guarda", "così", "ancora di più", "non fermarti", "qui", "bello", "brava",
+    ],
+    "portuguese": [
+        "sim", "tá", "porra", "vem", "mais", "devagar", "amor",
+        "espera", "olha", "assim", "de novo", "não para", "aqui", "caralho", "gostoso",
+    ],
+    "german": [
+        "genau", "klar", "stimmt", "scheiße", "mehr", "komm", "jetzt",
+        "warte", "langsam", "nochmal", "weiter", "schatz", "also…", "hör mal", "bitte",
+    ],
+    "dutch": [
+        "ja", "oke", "tuurlijk", "meer", "kom", "door", "wacht",
+        "rustig", "schat", "zo", "echt?", "kijk", "nou…", "niet stoppen", "godver",
+    ],
+    "swedish": [
+        "ja", "okej", "precis", "fan", "mer", "kom", "sakta",
+        "vänta", "så", "igen", "älskling", "titta", "här", "fortsätt", "snälla",
+    ],
+    "norwegian": [
+        "ja", "ok", "akkurat", "faen", "mer", "kom", "sakte",
+        "vent", "sånn", "igjen", "elskede", "se", "her", "fortsett", "vær så snill",
+    ],
+    "russian": [
+        "да", "ладно", "точно", "блять", "ещё", "иди", "медленно",
+        "подожди", "вот так", "ещё раз", "малыш", "смотри", "сюда", "не останавливайся", "пожалуйста",
+    ],
+    "polish": [
+        "tak", "dobra", "jasne", "kurwa", "więcej", "chodź", "wolno",
+        "czekaj", "tak właśnie", "jeszcze raz", "kochanie", "patrz", "tu", "nie przestawaj", "proszę",
+    ],
+    "czech": [
+        "jo", "dobře", "jasně", "kurva", "víc", "pojď", "pomalu",
+        "počkej", "takhle", "ještě", "miláčku", "koukej", "tady", "nezastavuj", "prosím",
+    ],
+    "greek": [
+        "ναι", "εντάξει", "ακριβώς", "μαλάκα", "ακόμα", "έλα", "αργά",
+        "περίμενε", "έτσι", "ξανά", "αγάπη μου", "κοίτα", "εδώ", "μη σταματάς", "παρακαλώ",
+    ],
+    "arabic": [
+        "ايوه", "تمام", "والله", "يا الله", "اكثر", "تعال", "بطيء",
+        "استنى", "كده", "كمان مرة", "حبيبي", "حبيبتى", "بص", "هنا", "متوقفش",
+    ],
+    "hebrew": [
+        "כן", "בסדר", "בדיוק", "לעזאזל", "עוד", "בוא", "לאט",
+        "חכה", "ככה", "עוד פעם", "מתוק", "תסתכל", "פה", "אל תעצור", "בבקשה",
+    ],
+    "swahili": [
+        "ndiyo", "sawa", "kweli", "polepole", "njoo", "zaidi", "subiri",
+        "hivi", "tena", "mpenzi", "angalia", "hapa", "usiache", "tafadhali", "sasa",
+    ],
+    "filipino_english": [
+        "oo", "sige", "talaga?", "grabe", "halika", "more", "dahan-dahan",
+        "sandali", "ganyan", "ulit", "mahal", "tingnan mo", "dito", "huwag tumigil", "please",
+    ],
+    "indian_english": [
+        "haan", "acha", "exactly", "arey", "dekho", "aur", "dheere",
+        "ruko", "bas aise", "ek aur", "jaan", "sun", "yahan", "mat rukna", "please yaar",
+    ],
+    "nigerian_english": [
+        "abeg", "sha", "na so", "wetin", "come now", "more", "softly",
+        "hold on", "like that", "again o", "baby", "look sharp", "here", "no stop", "chai",
+    ],
+    "ghanaian_english": [
+        "paa", "chale", "ei", "bra", "more", "softly", "wait small",
+        "like that", "again", "me nua", "look", "here", "no stop", "please", "woahu?",
+    ],
+    "south_african_english": [
+        "ja", "lekker", "ag", "shame", "more", "come", "softly",
+        "wait", "like that", "again", "liefie", "look", "here", "don't stop", "now-now",
+    ],
+    "trinidadian": [
+        "fuh real", "eh", "oy", "allyuh", "doh stop", "easy", "come",
+        "again", "gyul", "sweetness", "listen", "lord", "alright", "take time", "true",
+    ],
+    "jamaican_rasta": [
+        "seen?",
+        "irie",
+        "easy nuh",
+        "yeah mon",
+        "true true",
+        "bloodclaat",
+        "what a gwaan",
+        "soon come",
+        "steady",
+        "bring it",
+        "yah",
+        "lord have mercy",
+        "don't rush it",
+        "feel that",
+        "one love",
+    ],
+    "cockney": [
+        "innit", "mate", "bloody", "oi", "come 'ere", "more", "easy",
+        "hold up", "like that", "again", "love", "look", "darlin'", "don't stop", "fuckin' hell",
+    ],
+    "scottish": [
+        "aye", "ken", "pure", "wee", "come here", "more", "easy",
+        "hold on", "like that", "again", "hen", "look", "pal", "dinnae stop", "fuckin' hell",
+    ],
+    "irish": [
+        "yeah", "sure", "grand", "feck", "come here", "more", "easy",
+        "hold on", "like that", "again", "love", "look", "pet", "don't stop", "Jesus",
+    ],
+    "scouse": [
+        "la", "sound", "boss", "calm down", "come 'ed", "more", "easy",
+        "hold up", "like that", "again", "love", "look", "mate", "don't stop", "fuckin' hell",
+    ],
+    "geordie": [
+        "aye", "howay", "pet", "canny", "come here", "more", "easy",
+        "hadaway", "like that", "again", "hinny", "look", "mate", "dinna stop", "bloody hell",
+    ],
+    "northern_english": [
+        "aye", "love", "soft lad", "come 'ere", "more", "easy",
+        "hold on", "like that", "again", "duck", "look", "mate", "don't stop", "bloody hell",
+    ],
+    "welsh": [
+        "yes", "right", "tidy", "come here", "more", "easy",
+        "hold on", "like that", "again", "love", "look", "bach", "don't stop", "bloody hell",
+    ],
+    "rp_british": [
+        "quite", "rather", "indeed", "come here", "more", "gently",
+        "one moment", "just so", "again", "darling", "look", "my dear", "don't stop", "bloody hell",
+    ],
+    "australian": [
+        "yeah nah", "mate", "fair dinkum", "come 'ere", "more", "easy",
+        "hang on", "like that", "again", "love", "look", "darl", "don't stop", "bloody hell",
+    ],
+    "new_zealand": [
+        "yeah", "sweet as", "bro", "come here", "more", "easy",
+        "hang on", "like that", "again", "love", "look", "mate", "don't stop", "choice",
+    ],
+    "southern_us": [
+        "mmhm", "alright now", "lord", "c'mere", "more", "easy",
+        "hold on", "just like that", "again", "darlin'", "sugar", "baby", "don't you stop", "shit",
+    ],
+}
+
+# Attach hand banks; fill any missing accent with a synthesized non-doubling list
+for _ak, _spec in ACCENTS.items():
+    if _ak in ADLIBS_BANKS and ADLIBS_BANKS[_ak]:
+        _spec["adlibs"] = list(ADLIBS_BANKS[_ak])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  INTENSITY → DIALECT HEAT (maps UI 1–10 onto how filthy the accent talks)
 #  Motion intensity stays in brain_ld._energy; THIS is speech filth only.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2594,6 +2781,53 @@ def _flat_slips(spec: dict) -> list:
     return uniq
 
 
+def _dedupe_phrases(items: list, *, max_n: int = 20) -> list[str]:
+    """Case-insensitive de-dupe; keep short seasoning phrases."""
+    seen, out = set(), []
+    for raw in items or []:
+        w = re.sub(r"\s+", " ", str(raw or "").strip())
+        if not w or len(w) > 42:
+            continue
+        k = w.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(w)
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def ensure_adlibs(spec: dict) -> list[str]:
+    """Return ~12–15 ad-libs for this accent — hand bank first, then fill without doubles.
+
+    Prefer explicit adlibs[]; else openers + slips + short scene_bits. Never
+    re-lists the same token twice. This is the natural seasoning pool so Intent
+    does not need \"ja?\" / \"seen?\" typed by the user.
+    """
+    if not spec:
+        return []
+    bank: list[str] = []
+    # 1) Hand-tuned adlibs (top priority)
+    bank.extend(spec.get("adlibs") or [])
+    # 2) Openers (single tags that open a line)
+    bank.extend(spec.get("openers") or [])
+    # 3) Flat slips (all buckets)
+    bank.extend(_flat_slips(spec))
+    # 4) Short scene bits (already phrase-shaped)
+    for b in spec.get("scene_bits") or []:
+        if len(str(b)) <= 36:
+            bank.append(str(b))
+    # 5) Ultra-short example fragments only if still thin
+    if len(_dedupe_phrases(bank, max_n=20)) < 10:
+        for ex in _all_examples(spec, explicit=True)[:6]:
+            # take first clause of example if short
+            bit = str(ex).split("…")[0].strip() if "…" in str(ex) else str(ex)
+            if len(bit) <= 28:
+                bank.append(bit)
+    return _dedupe_phrases(bank, max_n=15)
+
+
 def _all_examples(spec: dict, explicit: bool) -> list:
     ex = spec.get("examples") or {}
     if isinstance(ex, list):
@@ -2611,44 +2845,39 @@ def _all_examples(spec: dict, explicit: bool) -> list:
 
 
 def _seed_palette(spec: dict, seed: int = 0, n: int = 12, scene_blob: str = "") -> list:
-    """Pick 10–15 non-repeating words/phrases for THIS clip only.
+    """Pick 10–15 non-repeating AD-LIBS / slips for THIS clip only.
 
-    Seeded so re-rolls rotate material; scene_blob lightly prefers matching bits.
+    Priority: hand adlibs → openers → slips → short scene_bits.
+    Seeded so re-rolls rotate material; no doubles; scene_blob lightly prefers matches.
     """
     import random
-    bank: list[str] = []
-    for o in spec.get("openers") or []:
-        bank.append(str(o))
-    bank.extend(_flat_slips(spec))
-    for b in spec.get("scene_bits") or []:
-        bank.append(str(b))
-    # short examples as shape phrases
-    for ex in _all_examples(spec, explicit=True)[:8]:
-        # keep short-ish bits only
-        if len(str(ex)) <= 48:
-            bank.append(str(ex))
-    # de-dupe case-insensitive
-    seen, uniq = set(), []
-    for w in bank:
-        w = (w or "").strip()
-        if not w:
-            continue
-        k = w.lower()
-        if k not in seen:
-            seen.add(k)
-            uniq.append(w)
+    # Ad-lib bank is the spine (already de-duped, ~15 max)
+    adlibs = ensure_adlibs(spec)
+    # Optional extras only if adlibs thin — never re-add same tokens
+    have = {a.lower() for a in adlibs}
+    extras: list[str] = []
+    for b in (spec.get("scene_bits") or []):
+        s = str(b).strip()
+        if s and s.lower() not in have and len(s) <= 40:
+            extras.append(s)
+            have.add(s.lower())
+    for ex in _all_examples(spec, explicit=True)[:5]:
+        s = str(ex).strip()
+        if s and s.lower() not in have and len(s) <= 40:
+            extras.append(s)
+            have.add(s.lower())
+
+    uniq = adlibs + extras
     if not uniq:
         return []
     name = spec.get("name") or "x"
     stable = sum(ord(c) for c in name) & 0xFFFF
     rng = random.Random(int(seed or 0) ^ stable)
-    # Scene-aware: pull any bank item whose keywords appear in scene first
     blob = (scene_blob or "").lower()
     preferred, rest = [], []
     for w in uniq:
         wl = w.lower()
-        # soft match: share a content word with scene
-        words = [t for t in re.findall(r"[a-zA-Z']{3,}", wl) if t not in (
+        words = [t for t in re.findall(r"[a-zA-Z\u00C0-\u024F']{3,}", wl) if t not in (
             "the", "and", "for", "you", "that", "this", "like", "with", "look",
         )]
         if any(t in blob for t in words[:3]):
@@ -2657,13 +2886,15 @@ def _seed_palette(spec: dict, seed: int = 0, n: int = 12, scene_blob: str = "") 
             rest.append(w)
     rng.shuffle(preferred)
     rng.shuffle(rest)
-    ordered = preferred + rest
-    # Guarantee depth: pad by reshuffling if thin
+    # Keep first ~half of adlibs order-stable-ish: adlibs head, then shuffled rest
+    # so core language tags always show; seed rotates the tail
     n = max(10, min(15, int(n or 12)))
-    if len(ordered) < n:
-        # still return what we have
-        return ordered
-    return ordered[:n]
+    core = adlibs[: min(8, len(adlibs))]
+    tail = [w for w in (preferred + rest) if w not in core]
+    rng.shuffle(tail)
+    ordered = core + tail
+    # de-dupe again after merge
+    return _dedupe_phrases(ordered, max_n=n)
 
 
 def _ensure_scene_bits(spec: dict) -> list:
@@ -2695,6 +2926,7 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
     art = "An" if adj[:1].lower() in "aeiou" else "A"
     openers = s.get("openers") or []
     slips = s.get("slips") or {}
+    adlibs = ensure_adlibs(s)
     examples = _all_examples(s, explicit)
     anti = s.get("anti") or []
     tier = heat_tier(energy)
@@ -2702,7 +2934,7 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
     # ensure we always show ≥10 if bank allows
     if len(palette) < 10:
         palette = _seed_palette(
-            {**s, "scene_bits": _ensure_scene_bits(s)},
+            {**s, "scene_bits": _ensure_scene_bits(s), "adlibs": adlibs},
             seed=seed, n=12, scene_blob=scene_blob,
         )
     look = pick_character_profile(
@@ -2716,20 +2948,6 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
     gender = _profile_gender(lead_gender, role)
     alt_bank = (CHARACTER_PROFILES.get(key) or {}).get(gender) or []
     alts = [x for x in alt_bank if x != look][:2]
-
-    def _ctx(label, arr):
-        if not arr:
-            return None
-        return f"   • {label}: " + " · ".join(arr[:8])
-
-    slip_lines = [
-        _ctx("agree / yes", slips.get("agree")),
-        _ctx("urge / more", slips.get("urge")),
-        _ctx("surprise", slips.get("surprise")),
-        _ctx("intimate", slips.get("intimate")),
-        _ctx("soft / wait", slips.get("soft")),
-    ]
-    slip_lines = [x for x in slip_lines if x]
 
     L = [
         f"\n── SPEAKER: {role_label} — {nm.upper()} ──",
@@ -2775,37 +2993,68 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
         "",
         "HOW THIS SPEAKER TALKS:",
         "   • Most words = accented ENGLISH (grammar + rhythm below).",
-        "   • Native/regional slips = occasional, moment-fit — NEVER the same tag every line.",
-        "   • VARIETY LOCK: never reuse the same slip twice; never reuse the same full line twice.",
+        "   • AD-LIBS / slips = occasional, moment-fit seasoning from THIS language's list — "
+        "do NOT require the user to type them in Intent; you add them naturally.",
+        "   • VARIETY LOCK: never reuse the same ad-lib twice; never reuse the same full line twice.",
         "   • NEVER phonetic comedy spelling of English.",
-        "   • NEVER tack one particle (ja? / aye / mon / ne?) onto every line — sounds silly.",
+        "   • NEVER tack one particle (ja? / aye / mon / ne? / seen?) onto every line — sounds silly.",
         "GRAMMAR / RHYTHM:",
     ]
     for g in s.get("grammar") or []:
         L.append(f"   • {g}")
     L.append(f"   • PACING: {s.get('prosody', 'short clauses; natural … pauses')}")
     L.append(
-        "THIS CLIP SEED PALETTE (use these slips/phrases only when the moment fits — "
-        "each item at most ONCE; do not dump all; do not invent a different repeated tag):"
+        f"AD-LIBS FOR {nm.upper()} (this language's mini-phrases — sprinkle when the beat fits: "
+        "agree / surprise / urge / intimate. Each at most ONCE. Do not dump the list. "
+        "Do not invent a different repeated tag):"
+    )
+    if adlibs:
+        L.append("   " + " · ".join(f'"{p}"' for p in adlibs[:15]))
+    else:
+        L.append("   (light regional lexis sparingly)")
+    L.append(
+        "THIS CLIP SEED PALETTE (rotated subset for THIS seed — prefer these over inventing new tags; "
+        "each at most ONCE):"
     )
     if palette:
         L.append("   " + " · ".join(f'"{p}"' for p in palette))
     else:
-        L.append("   (light regional lexis sparingly)")
-    L.append("CONTEXT SLIP BUCKETS (full bank — still pick from palette above when possible):")
-    L.extend(slip_lines or ["   • (light regional lexis sparingly)"])
+        L.append("   (use ad-libs above sparingly)")
+    # Context buckets: only show items NOT already in adlibs (no double list)
+    ad_set = {a.lower() for a in adlibs}
+    def _ctx_unique(label, arr):
+        if not arr:
+            return None
+        rest = [w for w in arr if str(w).lower() not in ad_set]
+        if not rest:
+            return None
+        return f"   • {label}: " + " · ".join(rest[:6])
+    extra_buckets = [
+        _ctx_unique("agree / yes", slips.get("agree")),
+        _ctx_unique("urge / more", slips.get("urge")),
+        _ctx_unique("surprise", slips.get("surprise")),
+        _ctx_unique("intimate", slips.get("intimate")),
+        _ctx_unique("soft / wait", slips.get("soft")),
+    ]
+    extra_buckets = [x for x in extra_buckets if x]
+    if extra_buckets:
+        L.append("EXTRA SLIP BUCKETS (only if palette/ad-libs already used — still no doubles):")
+        L.extend(extra_buckets)
     if openers:
-        L.append(
-            "OPTIONAL FIRST-LINE OPENERS (at most once): "
-            + " · ".join(f'\"{o}\"' for o in openers[:6])
-        )
+        op_show = [o for o in openers[:6] if str(o).lower() not in ad_set]
+        if op_show:
+            L.append(
+                "OPTIONAL FIRST-LINE OPENERS (at most once): "
+                + " · ".join(f'\"{o}\"' for o in op_show)
+            )
     L.append("FAILURE MODES for this speaker:")
     L += [
         "   • Fluent unaccented English + one token foreign word at the end",
-        "   • Same particle spam every line (ja? ja? / aye aye / mon mon)",
+        "   • Same particle spam every line (ja? ja? / aye aye / mon mon / seen? seen?)",
         "   • Phonetic misspellings of English",
         "   • Mouth heat band ignored (too soft or too filthy for the setting)",
-        "   • Burning the whole palette in two lines — season, don't wallpaper",
+        "   • Burning the whole ad-lib list in two lines — season, don't wallpaper",
+        "   • Ignoring the language ad-lib bank and inventing American slang instead",
     ]
     for a in anti:
         L.append(f"   • {a}")

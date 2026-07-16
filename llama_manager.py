@@ -262,15 +262,25 @@ def kill(backend="llama.cpp (managed)"):
         return
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"],
-                           capture_output=True, timeout=10)
+            # Short timeout — Queue/Run must not stall 10s on taskkill
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "llama-server.exe"],
+                capture_output=True, timeout=2.5,
+            )
         else:
-            subprocess.run(["pkill", "-f", "llama-server"], capture_output=True, timeout=10)
+            subprocess.run(
+                ["pkill", "-f", "llama-server"],
+                capture_output=True, timeout=2.5,
+            )
     except Exception:
         pass
     if _proc is not None:
         try:
             _proc.kill()
+        except Exception:
+            pass
+        try:
+            _proc.wait(timeout=1.0)
         except Exception:
             pass
         _proc = None

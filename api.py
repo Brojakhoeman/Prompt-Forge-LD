@@ -103,14 +103,10 @@ def register_routes():
         if need_vision and mmproj_file == "None (text-only)" and llm.is_managed():
             return web.json_response({"error": "I2V needs mmproj for vision"}, status=400)
 
-        skip_flush = (
-            bool(body.get("skip_flush"))
-            or bool(body.get("keep_warm"))
-            or os.environ.get("PFLD_TEST") == "1"
-        )
+        # keep_warm = leave LLM loaded AFTER gen. Do NOT fold into skip_flush.
+        # After Queue/Run kills LLM, LTX holds VRAM; Re-roll must flush first.
         keep_warm = bool(body.get("keep_warm")) or os.environ.get("PFLD_KEEP_WARM") == "1"
         body = dict(body)
-        body["skip_flush"] = skip_flush
         body["keep_warm"] = keep_warm
 
         resp = web.StreamResponse(
@@ -144,8 +140,10 @@ def register_routes():
                     print(f"[PromptForgeLD] free: {llm.free()}")
                 except Exception:
                     pass
-                if not skip_flush:
+                try:
                     flush_vram("PromptForgeLD")
+                except Exception:
+                    pass
             else:
                 print("[PromptForgeLD] keep_warm — LLM left loaded")
             try:
@@ -175,9 +173,28 @@ def register_routes():
 
     @inst.routes.post("/pfld/kill")
     async def kill_llm(request):
-        llm.free()
-        flush_vram("PromptForgeLD")
-        return web.json_response({"ok": True})
+        """Kill/evict the LLM.
+
+        JSON body optional:
+          fast=true  → process/evict only + light CUDA clear (Queue/Run path — keep click snappy)
+          full=true  → also unload_all_models (cog "Kill LLM" / when you want a hard free)
+        Default for empty body: fast (was full — that froze Queue ~10s on full VRAM).
+        """
+        fast = True
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                if body.get("full") or body.get("flush") is True:
+                    fast = False
+                if body.get("fast") is False:
+                    fast = False
+        except Exception:
+            body = {}
+        msg = llm.free()
+        # Full unload is the multi-second stall when VRAM is packed — skip on fast path.
+        # Killing llama-server frees its VRAM via the driver; Comfy loads LTX next.
+        flush_vram("PromptForgeLD", light=bool(fast))
+        return web.json_response({"ok": True, "msg": msg, "fast": fast})
 
     @inst.routes.post("/pfld/set_backend")
     async def set_backend(request):

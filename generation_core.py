@@ -3,7 +3,9 @@ Generation core — one streaming path, backend-agnostic.
 
 Generate → stream → CANON scrub → done.
 Optional refine path revises a prior script without rebuilding the world.
-keep_warm skips VRAM free so rapid iterate stays fast.
+keep_warm leaves the LLM loaded AFTER gen for rapid re-roll; if the LLM is
+dead (e.g. after Queue/Run killed it for LTX), Comfy VRAM is flushed BEFORE
+boot even when keep_warm is on — otherwise Re-roll OOMs.
 """
 
 from __future__ import annotations
@@ -79,17 +81,48 @@ def _infer_explicit(text: str) -> bool:
     return False
 
 
-def _skip_flush(body):
-    return (
-        bool(body.get("skip_flush"))
-        or bool(body.get("keep_warm"))
-        or os.environ.get("PFLD_TEST") == "1"
-    )
-
-
 def _keep_llm(body):
-    """If true, do not free/kill the LLM after generate."""
+    """If true, do not free/kill the LLM *after* generate (stay warm for re-roll)."""
     return bool(body.get("keep_warm")) or os.environ.get("PFLD_KEEP_WARM") == "1"
+
+
+def _llm_server_up() -> bool:
+    """True when the configured LLM endpoint is already answering health."""
+    try:
+        conn = getattr(llm, "CONN", None) or {}
+        url = conn.get("server_url") or getattr(llm, "DEFAULT_URL", "http://127.0.0.1:8080")
+        be = conn.get("backend") or "llama.cpp (managed)"
+        return bool(llm.is_healthy(url, be))
+    except Exception:
+        return False
+
+
+def _should_flush_before(body, *, keep_warm: bool) -> bool:
+    """Unload Comfy/LTX models before booting the LLM when VRAM may be occupied.
+
+    keep_warm only means leave LLM loaded AFTER this gen — it must NOT skip
+    pre-flush when the LLM is dead and LTX still holds the GPU (Queue/Run then
+    Re-roll is the classic OOM path).
+    """
+    if body.get("force_flush") or body.get("flush_before"):
+        return True
+    skip_flag = body.get("skip_flush")
+    if skip_flag is True or str(skip_flag or "").strip().lower() in ("1", "true", "yes"):
+        # Client asked to skip — only honour if LLM is already warm
+        return not _llm_server_up()
+    if os.environ.get("PFLD_FAST") == "1" and _llm_server_up():
+        return False
+    # LLM already resident → VRAM is llama's; skip Comfy unload for speed
+    if keep_warm and _llm_server_up():
+        return False
+    # LLM dead / unknown → free LTX (or anything else) before boot
+    if not _llm_server_up():
+        return True
+    # keep_warm off: classic flush every generate
+    if not keep_warm:
+        return True
+    return False
+
 
 
 async def generate_prompt(body: dict, *, on_event=None) -> dict:
@@ -121,7 +154,11 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
     scenario_raw = body.get("scenario", "None — your words decide")
     dialogue_tier = body.get("dialogue_tier", "standard")
     music_key = body.get("music", "") or ""
-    music_txt = music_block(music_key)
+    music_bg = body.get("music_bg", body.get("music_background", False))
+    if isinstance(music_bg, str):
+        music_bg = music_bg.strip().lower() not in ("0", "false", "off", "no", "")
+    music_bg = bool(music_bg)
+    music_txt = music_block(music_key, background=music_bg)
     # Dual intensity axes (qualitative). Legacy intensity 1–10 still accepted.
     motion_level = body.get("motion_level") or body.get("body_intensity")
     mouth_heat = body.get("mouth_heat") or body.get("mouth_level")
@@ -158,8 +195,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
         music_key=music_key, music_text=music_txt,
         seed=seed, accent_hint=body.get("accent_mode") or "",
     )
-    skip_flush = _skip_flush(body)
     keep_warm = _keep_llm(body)
+    do_flush = _should_flush_before(body, keep_warm=keep_warm)
 
     if mode == "i2v" and not image_b64 and not (refine and prior):
         return {"error": "I2V needs an image", "elapsed_s": 0}
@@ -172,10 +209,17 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
 
     status_log = []
     try:
-        if not skip_flush:
-            await emit({"type": "status", "msg": "Flushing VRAM…"})
+        if do_flush:
+            await emit({
+                "type": "status",
+                "msg": (
+                    "Flushing Comfy/LTX VRAM for LLM…"
+                    if not _llm_server_up()
+                    else "Flushing VRAM…"
+                ),
+            })
             flush_vram("PromptForgeLD")
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.2)
 
         async for st in boot_llama(model_file, mmproj_file, need_vision):
             if st.startswith("error:"):
@@ -230,6 +274,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
             detailer=body.get("detailer", False),
             lora_triggers=body.get("lora_triggers", "") or "",
             seed=seed,
+            music_key=music_key or "",
+            music_background=music_bg,
             _duration_is_write=True,
         )
 
@@ -308,6 +354,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
         full = brain.finalize(
             raw_full, mode=mode, intent=intent, pov=pov, scenario=scenario,
             dialogue_tier=dialogue_tier, repair=do_repair,
+            music_background=music_bg,
+            music_key=music_key or "",
         )
         # Guarantee LoRA activation tokens appear in the pack positive
         try:
@@ -405,6 +453,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                     accent_partner=accent_partner,
                     detailer=body.get("detailer", False),
                     lora_triggers=body.get("lora_triggers", "") or "",
+                    music_key=music_key or "",
+                    music_background=music_bg,
                     _duration_is_write=True,
                 )
                 densify_payload = {
@@ -454,6 +504,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                                     "".join(acc2), mode=mode, intent=intent, pov=pov,
                                     scenario=scenario, dialogue_tier=dialogue_tier,
                                     repair=do_repair,
+                                    music_background=music_bg,
+                                    music_key=music_key or "",
                                 )
                                 densified = ensure_triggers_in_script(
                                     densified, body.get("lora_triggers", "") or "",
@@ -511,11 +563,27 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                 pov=pov,
                 video_style=video_style,
                 lora_triggers=body.get("lora_triggers", "") or "",
+                music_key=music_key or "",
+                intent=intent,
+                scenario=scenario or "",
+                duration_s=write_dur,
             )
-            await emit({
-                "type": "status",
-                "msg": f"Self-check ({sc_mode}) · {len(chips)} questions…",
-            })
+            # Pre-scan beats for status (so you see the smart pass even before QA finishes)
+            beat_scan = sc.scan_intent_beats(intent, full)
+            if beat_scan.get("total"):
+                await emit({
+                    "type": "status",
+                    "msg": (
+                        f"Self-check ({sc_mode}) · {len(chips)} questions · "
+                        f"intent beats {beat_scan['hits']}/{beat_scan['total']} lexical"
+                        + (f" · miss: {beat_scan['miss_list'][0][:40]}…" if beat_scan.get("miss_list") else "")
+                    ),
+                })
+            else:
+                await emit({
+                    "type": "status",
+                    "msg": f"Self-check ({sc_mode}) · {len(chips)} questions…",
+                })
             sc_t0 = time.time()
             try:
                 sc_msgs = sc.build_self_check_messages(
@@ -527,6 +595,10 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                     pov=pov,
                     lora_triggers=body.get("lora_triggers", "") or "",
                     fix=(sc_mode == "fix"),
+                    music_key=music_key or "",
+                    music_background=music_bg,
+                    scenario=scenario or "",
+                    duration_s=write_dur,
                 )
                 # Cap completion — report is short; fix needs full script room
                 sc_max = 900 if sc_mode == "report" else min(
@@ -548,6 +620,8 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                         parsed["revised"], mode=mode, intent=intent, pov=pov,
                         scenario=scenario, dialogue_tier=dialogue_tier,
                         repair=do_repair,
+                        music_background=music_bg,
+                        music_key=music_key or "",
                     )
                     revised = ensure_triggers_in_script(
                         revised, body.get("lora_triggers", "") or "",
@@ -625,7 +699,13 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
             "resolved_environment": environment,
         }
     finally:
-        if not skip_flush and not keep_warm:
+        # keep_warm: leave LLM loaded. Never free Comfy models here in warm mode —
+        # pre-flush already handled LTX when rebooting a dead LLM.
+        if not keep_warm:
+            try:
+                llm.free()
+            except Exception:
+                pass
             flush_vram("PromptForgeLD")
 
 
@@ -681,12 +761,18 @@ def assemble_preview(body: dict) -> dict:
         camera_block=camera_bolt(
             body.get("camera_move", "None"), pov=bool(body.get("pov", False)),
         ),
-        music_block=music_block(body.get("music", "")),
+        music_block=music_block(
+            body.get("music", ""),
+            background=bool(body.get("music_bg", body.get("music_background", False))),
+        ),
         music_key=body.get("music", "") or "",
         style_block=build_style_block(
             video_style, mode=mode, intent=intent,
             music_key=body.get("music", "") or "",
-            music_text=music_block(body.get("music", "")),
+            music_text=music_block(
+                body.get("music", ""),
+                background=bool(body.get("music_bg", body.get("music_background", False))),
+            ),
             seed=prev_seed, accent_hint=accent_mode or "",
         ),
         cast=cast,
@@ -718,6 +804,8 @@ def assemble_preview(body: dict) -> dict:
             detailer=body.get("detailer", False),
             lora_triggers=body.get("lora_triggers", "") or "",
             seed=prev_seed,
+            music_key=body.get("music", "") or "",
+            music_background=bool(body.get("music_bg", body.get("music_background", False))),
             _duration_is_write=True,
         )
     return {

@@ -87,6 +87,24 @@ class PromptForgeLD:
             cast="pair", lead_gender="auto", video_style=None, accent_mode="auto", accent_partner="off",
             motion_level="Normal", mouth_heat="Normal", continuity_state="",
             duration_s=None, fps=None, unique_id=None):
+        # Comfy Queue/Run hit this node → free local LLM so LTX can take the GPU.
+        # Fast only: full unload_all_models here was a multi-second freeze at graph start.
+        try:
+            from . import llama_manager as llm
+            from .vram import flush_vram
+        except ImportError:
+            import llama_manager as llm
+            from vram import flush_vram
+        try:
+            msg = llm.free()
+            print(f"[PromptForgeLD] Queue/Run hand-off: {msg}")
+        except Exception as e:
+            print(f"[PromptForgeLD] Queue/Run LLM free skipped: {e}")
+        try:
+            flush_vram("PromptForgeLD", light=True)
+        except Exception as e:
+            print(f"[PromptForgeLD] Queue/Run light flush skipped: {e}")
+
         out_w = max(64, int(rm_w or 1088))
         out_h = max(64, int(rm_h or 1920))
 
