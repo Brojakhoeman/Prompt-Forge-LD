@@ -104,12 +104,21 @@
 }
 .gpl-fields-3-tight {
   grid-template-columns: 1fr 1fr 1fr !important;
-  gap: 6px 8px !important;
+  gap: 5px 7px !important;
   margin: 0 !important;
 }
-.gpl-fields-3-tight .gpl-field:nth-child(4),
-.gpl-fields-3-tight .gpl-field:nth-child(5) {
-  /* music + lead share row under first 3 */
+/* Voice cluster: Lead + Accent·Lead + Accent·Partner — one row */
+.gpl-fields-voice-3 {
+  display: grid !important;
+  grid-template-columns: 0.85fr 1.15fr 1.15fr !important;
+  gap: 5px 7px !important;
+  margin: 0 !important;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .gpl-fields-voice-3 {
+    grid-template-columns: 1fr !important;
+  }
 }
 .gpl-fields-stack {
   display: flex !important;
@@ -125,23 +134,25 @@
 .gpl-mid.gpl-mid-off { display: none !important; }
 #gpl-res { width: 100%; min-width: 0; }
 .gpl-bot {
-  flex: 1;
+  /* Fill leftover node height; LTX Script textarea flexes inside */
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 200px;
-  border-color: rgba(168,85,247,.18);
+  min-height: 0;
+  /* Theme-driven (was hardcoded purple) */
+  border-color: color-mix(in srgb, var(--violet) 22%, transparent);
   background:
-    linear-gradient(180deg, rgba(168,85,247,.06), transparent 40%),
+    linear-gradient(180deg, color-mix(in srgb, var(--violet) 8%, transparent), transparent 42%),
     var(--panel);
 }
 
-/* ── Colour section cards ───────────────────────────────────────── */
+/* ── Section cards — tints follow theme role colours ─────────────── */
 .gpl-sec {
   border-radius: 10px;
   padding: 8px 10px 10px;
   background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.05);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   position: relative;
 }
 .gpl-sec-head {
@@ -169,38 +180,38 @@
   color: var(--muted);
 }
 .gpl-sec-shot {
-  border-color: rgba(92,225,230,.2);
-  background: linear-gradient(135deg, rgba(92,225,230,.08), rgba(0,0,0,.18) 55%);
+  border-color: color-mix(in srgb, var(--cyan) 28%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 12%, transparent), rgba(0,0,0,.18) 55%);
 }
 .gpl-sec-shot .gpl-sec-dot { background: var(--cyan); color: var(--cyan); }
-.gpl-sec-shot .gpl-sec-title { color: #9aedf0; }
+.gpl-sec-shot .gpl-sec-title { color: color-mix(in srgb, var(--cyan) 70%, white); }
 .gpl-sec-scene {
-  border-color: rgba(168,85,247,.22);
-  background: linear-gradient(135deg, rgba(168,85,247,.1), rgba(0,0,0,.18) 55%);
+  border-color: color-mix(in srgb, var(--violet) 28%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--violet) 12%, transparent), rgba(0,0,0,.18) 55%);
 }
 .gpl-sec-scene .gpl-sec-dot { background: var(--violet); color: var(--violet); }
-.gpl-sec-scene .gpl-sec-title { color: #d4b4ff; }
+.gpl-sec-scene .gpl-sec-title { color: color-mix(in srgb, var(--violet) 65%, white); }
 .gpl-sec-voice {
-  border-color: rgba(255,107,157,.22);
-  background: linear-gradient(135deg, rgba(255,107,157,.09), rgba(0,0,0,.18) 55%);
+  border-color: color-mix(in srgb, var(--rose) 28%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--rose) 11%, transparent), rgba(0,0,0,.18) 55%);
 }
 .gpl-sec-voice .gpl-sec-dot { background: var(--rose); color: var(--rose); }
-.gpl-sec-voice .gpl-sec-title { color: #ffb8d0; }
+.gpl-sec-voice .gpl-sec-title { color: color-mix(in srgb, var(--rose) 65%, white); }
 .gpl-sec-energy {
-  border-color: rgba(255,200,87,.22);
-  background: linear-gradient(135deg, rgba(255,200,87,.09), rgba(0,0,0,.18) 55%);
+  border-color: color-mix(in srgb, var(--gold) 28%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 11%, transparent), rgba(0,0,0,.18) 55%);
 }
 .gpl-sec-energy .gpl-sec-dot { background: var(--gold); color: var(--gold); }
-.gpl-sec-energy .gpl-sec-title { color: #ffe0a0; }
+.gpl-sec-energy .gpl-sec-title { color: color-mix(in srgb, var(--gold) 70%, white); }
 .gpl-sec-media {
-  border-color: rgba(110,231,183,.18);
+  border-color: color-mix(in srgb, var(--mint) 24%, transparent);
   background:
-    linear-gradient(180deg, rgba(110,231,183,.05), transparent 35%),
+    linear-gradient(180deg, color-mix(in srgb, var(--mint) 8%, transparent), transparent 35%),
     var(--panel);
 }
 .gpl-sec-head-media { margin-bottom: 8px; }
 .gpl-sec-media .gpl-sec-dot { background: var(--mint); color: var(--mint); }
-.gpl-sec-media .gpl-sec-title { color: #a7f3d0; }
+.gpl-sec-media .gpl-sec-title { color: color-mix(in srgb, var(--mint) 65%, white); }
 
 .gpl-header { margin-bottom: 2px; }
 .gpl-shot-row {
@@ -247,16 +258,16 @@
   background: rgba(0,0,0,.45);
 }
 #gpl-dlg.gpl-chipgrp {
-  border-color: rgba(168,85,247,.2);
-  box-shadow: inset 0 0 0 1px rgba(168,85,247,.08);
+  border-color: color-mix(in srgb, var(--violet) 24%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 10%, transparent);
 }
 #gpl-pov.gpl-chipgrp {
-  border-color: rgba(255,107,157,.18);
-  box-shadow: inset 0 0 0 1px rgba(255,107,157,.08);
+  border-color: color-mix(in srgb, var(--rose) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 10%, transparent);
 }
 #gpl-cast.gpl-chipgrp {
-  border-color: rgba(92,225,230,.18);
-  box-shadow: inset 0 0 0 1px rgba(92,225,230,.08);
+  border-color: color-mix(in srgb, var(--cyan) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 10%, transparent);
 }
 
 .gpl-energy-row {
@@ -285,8 +296,27 @@
   margin-top: 2px;
 }
 
-.gpl-write-col { display: flex; flex-direction: column; gap: 4px; }
-.gpl-write-out { flex: 1; min-height: 0; }
+.gpl-write-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto; /* Intent block — fixed by its own grip */
+  min-height: 0;
+}
+/* LTX Script column: fills remaining node height (no independent resize) */
+.gpl-write-out {
+  flex: 1 1 auto;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gpl-write-out > .gpl-lbl-row,
+.gpl-write-out > .gpl-cont-strip,
+.gpl-write-out > .gpl-actions,
+.gpl-write-out > .gpl-st {
+  flex: 0 0 auto;
+}
 .gpl-lbl-intent { color: var(--gold) !important; }
 .gpl-lbl-script { color: var(--violet) !important; }
 
@@ -529,29 +559,43 @@
 }
 .gpl-chip:hover { color: var(--text); }
 .gpl-chip.on { background: rgba(255,255,255,.14); color: var(--text); }
-.gpl-chip.on.rose { background: rgba(255,107,157,.22); color: #ffb8d0; }
-.gpl-chip.on.cyan { background: rgba(92,225,230,.18); color: var(--cyan); }
+.gpl-chip.on.rose {
+  background: color-mix(in srgb, var(--rose) 24%, transparent);
+  color: color-mix(in srgb, var(--rose) 55%, white);
+}
+.gpl-chip.on.cyan {
+  background: color-mix(in srgb, var(--cyan) 20%, transparent);
+  color: var(--cyan);
+}
 .gpl-chip.pov-off.on { background: rgba(255,255,255,.08); color: var(--muted); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
-.gpl-chip.pov-f.on { background: rgba(255,90,170,.38); color: #ffe0f0; box-shadow: inset 0 0 0 2px rgba(255,120,190,.75); }
-.gpl-chip.pov-m.on { background: rgba(55,125,255,.38); color: #d0e4ff; box-shadow: inset 0 0 0 2px rgba(80,150,255,.75); }
+.gpl-chip.pov-f.on {
+  background: color-mix(in srgb, var(--rose) 38%, transparent);
+  color: color-mix(in srgb, var(--rose) 40%, white);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rose) 70%, transparent);
+}
+.gpl-chip.pov-m.on {
+  background: color-mix(in srgb, var(--cyan) 36%, transparent);
+  color: color-mix(in srgb, var(--cyan) 40%, white);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cyan) 65%, transparent);
+}
 /* Energy chips: soft tint when active */
 #gpl-motion .gpl-chip.on:not(.rose),
 #gpl-mouth .gpl-chip.on:not(.rose) {
-  background: rgba(255,200,87,.2);
-  color: #ffe6a8;
-  box-shadow: inset 0 0 0 1px rgba(255,200,87,.35);
+  background: color-mix(in srgb, var(--gold) 22%, transparent);
+  color: color-mix(in srgb, var(--gold) 55%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 38%, transparent);
 }
 #gpl-dlg .gpl-chip.on:not(.rose) {
-  background: rgba(168,85,247,.22);
-  color: #e9d5ff;
-  box-shadow: inset 0 0 0 1px rgba(168,85,247,.4);
+  background: color-mix(in srgb, var(--violet) 24%, transparent);
+  color: color-mix(in srgb, var(--violet) 50%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 42%, transparent);
 }
 
 /* Cast chips share cyan when on */
 #gpl-cast .gpl-chip.on {
-  background: rgba(92,225,230,.18);
+  background: color-mix(in srgb, var(--cyan) 20%, transparent);
   color: var(--cyan);
-  box-shadow: inset 0 0 0 1px rgba(92,225,230,.35);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 36%, transparent);
 }
 
 .gpl-fields-2 {
@@ -573,15 +617,15 @@
 .gpl-field-row select { flex: 1; min-width: 0; }
 .gpl-icon-btn {
   flex: 0 0 auto;
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: 6px 8px;
+  font-size: 11px;
   border-radius: 6px;
-  border: 1px solid rgba(168,85,247,.4);
-  background: rgba(168,85,247,.1);
-  color: #a855f7;
+  border: 1px solid color-mix(in srgb, var(--violet) 40%, transparent);
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  color: var(--violet);
   cursor: pointer;
 }
-.gpl-icon-btn:hover { background: rgba(168,85,247,.22); }
+.gpl-icon-btn:hover { background: color-mix(in srgb, var(--violet) 24%, transparent); }
 
 .gpl-check {
   font: 600 calc(12px * var(--text-scale)) 'JetBrains Mono', monospace !important;
@@ -609,7 +653,7 @@
 .gpl-history {
   max-width: 48%;
   background: rgba(0,0,0,.45);
-  border: 1px solid rgba(168,85,247,.3);
+  border: 1px solid color-mix(in srgb, var(--violet) 30%, transparent);
   border-radius: 6px;
   color: var(--text);
   font: 500 11px 'JetBrains Mono', monospace;
@@ -629,23 +673,23 @@
   min-height: 18px;
 }
 .gpl-cont-strip.has {
-  color: #c4b5fd;
-  border-color: rgba(168,85,247,.35);
-  background: rgba(168,85,247,.08);
+  color: color-mix(in srgb, var(--violet) 55%, white);
+  border-color: color-mix(in srgb, var(--violet) 36%, transparent);
+  background: color-mix(in srgb, var(--violet) 10%, transparent);
 }
 
 .gpl-btn-refine {
   padding: 10px 16px;
   border-radius: 8px;
-  border: 1px solid rgba(255,200,87,.4);
-  background: rgba(255,200,87,.12);
+  border: 1px solid color-mix(in srgb, var(--gold) 42%, transparent);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
   color: var(--gold);
   font: 700 13px 'Outfit', sans-serif;
   cursor: pointer;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
-.gpl-btn-refine:hover { background: rgba(255,200,87,.22); }
+.gpl-btn-refine:hover { background: color-mix(in srgb, var(--gold) 24%, transparent); }
 .gpl-btn-refine:disabled { opacity: .45; cursor: not-allowed; }
 
 .gpl-dur-inline input[type=range] { width: 90px; }
@@ -667,21 +711,24 @@
 }
 .gpl-field label {
   display: block;
-  font: 700 calc(11px * var(--text-scale)) 'JetBrains Mono', monospace;
+  font: 700 calc(10px * var(--text-scale)) 'JetBrains Mono', monospace;
   color: rgba(255,255,255,.42);
   text-transform: uppercase;
   letter-spacing: .1em;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
 }
 .gpl-field select {
   width: 100%;
   box-sizing: border-box;
   background: rgba(0,0,0,.5);
   border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px;
+  border-radius: 7px;
   color: var(--text);
-  padding: 9px 10px;
-  font: 500 14px 'JetBrains Mono', monospace;
+  /* ~10% shorter than old 9px/14px padding+type */
+  padding: 7px 9px;
+  min-height: 0;
+  font: 500 13px 'JetBrains Mono', monospace;
+  line-height: 1.25;
   transition: border-color .12s, box-shadow .12s;
 }
 .gpl-field select:hover {
@@ -1033,38 +1080,85 @@
   cursor: pointer;
 }
 
+/* Shared prompt field chrome */
 .gpl-prompt {
-  flex: 1;
-  min-height: 72px;
   width: 100%;
-  resize: vertical;
   box-sizing: border-box;
   border-radius: 10px;
   padding: 12px 14px;
   font: 400 calc(15px * var(--text-scale))/1.45 'JetBrains Mono', monospace;
+  overflow-y: auto;
+  resize: none;
+}
+
+/* Intent only — independent corner drag (native resize fails under Comfy flex) */
+.gpl-ta-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.gpl-ta-wrap .gpl-prompt {
+  display: block;
+  flex: none !important;
+  padding-bottom: 22px; /* room for grip */
+  min-height: 56px;
+  max-height: none;
+}
+.gpl-ta-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 20px;
+  height: 20px;
+  z-index: 6;
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: 0 0 8px 0;
+  background:
+    linear-gradient(135deg, transparent 45%, rgba(255,255,255,.18) 46%, rgba(255,255,255,.18) 54%, transparent 55%),
+    linear-gradient(135deg, transparent 60%, rgba(255,255,255,.28) 61%, rgba(255,255,255,.28) 69%, transparent 70%),
+    linear-gradient(135deg, transparent 75%, rgba(255,255,255,.4) 76%, rgba(255,255,255,.4) 84%, transparent 85%);
+  opacity: 0.55;
+  transition: opacity .12s ease, background-color .12s ease;
+}
+.gpl-ta-grip:hover,
+.gpl-ta-wrap.dragging .gpl-ta-grip {
+  opacity: 1;
+  background-color: rgba(255, 200, 87, 0.22);
+}
+.gpl-ta-wrap.dragging .gpl-prompt {
+  user-select: none;
 }
 .gpl-intent {
-  background: rgba(0,0,0,.45);
-  border: 1px solid rgba(255,200,87,.28);
-  color: #fff8e7;
-  box-shadow: 0 0 0 1px rgba(255,200,87,.06) inset;
+  background: color-mix(in srgb, var(--bg) 55%, black);
+  border: 1px solid color-mix(in srgb, var(--gold) 32%, transparent);
+  color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 8%, transparent) inset;
 }
 .gpl-intent:focus {
   outline: none;
-  border-color: rgba(255,200,87,.5);
-  box-shadow: 0 0 0 2px rgba(255,200,87,.12);
+  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 14%, transparent);
 }
+
+/* LTX Script — fills leftover column; only grows when the Comfy node is resized */
 .gpl-out {
-  background: rgba(20,10,35,.8);
-  border: 1px solid rgba(168,85,247,.35);
-  color: #ede5ff;
+  flex: 1 1 auto;
   min-height: 100px;
-  box-shadow: 0 0 0 1px rgba(168,85,247,.06) inset;
+  height: auto;
+  width: 100%;
+  background: color-mix(in srgb, var(--panel) 70%, black);
+  border: 1px solid color-mix(in srgb, var(--violet) 36%, transparent);
+  color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--violet) 8%, transparent) inset;
+  resize: none !important;
 }
 .gpl-out:focus {
   outline: none;
-  border-color: rgba(168,85,247,.55);
-  box-shadow: 0 0 0 2px rgba(168,85,247,.14);
+  border-color: color-mix(in srgb, var(--violet) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--violet) 14%, transparent);
 }
 .gpl-lbl {
   font: 700 calc(12px * var(--text-scale)) 'JetBrains Mono', monospace;
@@ -1091,11 +1185,11 @@
   text-transform: uppercase;
 }
 .gpl-btn-gen {
-  background: linear-gradient(135deg, #fff 0%, #e9d5ff 100%);
+  background: linear-gradient(135deg, #fff 0%, color-mix(in srgb, var(--violet) 22%, #fff) 100%);
   color: #0a0612;
   flex: 1;
   min-width: 120px;
-  box-shadow: 0 2px 12px rgba(168,85,247,.25);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--violet) 28%, transparent);
 }
 .gpl-btn-gen:hover { filter: brightness(1.05); }
 .gpl-btn-gen.stop {
@@ -1374,14 +1468,15 @@
   justify-content: space-between;
   gap: 6px;
   text-align: left;
-  padding: 6px 10px;
+  padding: 7px 9px;
   border-radius: 7px;
-  border: 1px solid rgba(168, 85, 247, 0.35);
-  background: rgba(10, 6, 20, 0.85);
+  border: 1px solid color-mix(in srgb, var(--violet) 35%, transparent);
+  background: color-mix(in srgb, var(--bg) 70%, black);
   color: var(--text);
-  font: 500 12px/1.3 "Outfit", system-ui, sans-serif;
+  font: 500 13px/1.25 "JetBrains Mono", monospace;
   cursor: pointer;
   box-sizing: border-box;
+  min-height: 0;
 }
 .gpl-style-btn::after {
   content: "?";
@@ -1438,4 +1533,348 @@
 /* Style menu tips: slightly wider for example lines */
 .pfld-float-tip {
   max-width: min(340px, 78vw);
+}
+
+/* ---------------------------------------------------------------------------
+   COMFYUI NATIVE MODE � full chrome override (not a palette swap)
+   Toggle: .gpl-root.gpl-comfy-native
+   Matches stock Comfy dark widgets / flat node panels (no candy gradients).
+   --------------------------------------------------------------------------- */
+.gpl-root.gpl-comfy-native {
+  /* Defaults; JS overwrites from node.color — one accent for chips + panels */
+  --bg: #1a1a1a;
+  --panel: #252525;
+  --text: #ececec;
+  --muted: #a8a8a8;
+  --gold: #7c6bb0;
+  --cyan: #7c6bb0;
+  --violet: #7c6bb0;
+  --rose: #7c6bb0;
+  --mint: #7c6bb0;
+  --comfy-on: #5eb8f0;
+  --comfy-off: #f07178;
+  --comfy-accent: #7c6bb0;
+  --line: rgba(255,255,255,.14);
+  --glow-a: transparent;
+  --glow-b: transparent;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+  color: #ececec !important;
+  background: #1a1a1a !important;
+  border: 1px solid color-mix(in srgb, var(--violet, #7c6bb0) 55%, #3a3a3a) !important;
+  border-radius: 6px !important;
+  padding: 8px !important;
+  gap: 6px !important;
+  box-shadow: inset 0 2px 0 0 color-mix(in srgb, var(--violet, #7c6bb0) 70%, transparent) !important;
+}
+
+/* Zones / sections — same shell accent as selected buttons (no cyan/rose/gold split) */
+.gpl-root.gpl-comfy-native .gpl-zone,
+.gpl-root.gpl-comfy-native .gpl-sec {
+  background: color-mix(in srgb, var(--violet, #7c6bb0) 10%, #252525) !important;
+  border: 1px solid color-mix(in srgb, var(--violet, #7c6bb0) 38%, #3a3a3a) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  padding: 8px !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-sec-shot,
+.gpl-root.gpl-comfy-native .gpl-sec-scene,
+.gpl-root.gpl-comfy-native .gpl-sec-voice,
+.gpl-root.gpl-comfy-native .gpl-sec-energy,
+.gpl-root.gpl-comfy-native .gpl-sec-media,
+.gpl-root.gpl-comfy-native .gpl-bot {
+  background: color-mix(in srgb, var(--violet, #7c6bb0) 10%, #252525) !important;
+  border-color: color-mix(in srgb, var(--violet, #7c6bb0) 38%, #3a3a3a) !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-sec-title,
+.gpl-root.gpl-comfy-native .gpl-lbl,
+.gpl-root.gpl-comfy-native .gpl-lbl-intent,
+.gpl-root.gpl-comfy-native .gpl-lbl-script,
+.gpl-root.gpl-comfy-native .gpl-chip-lbl,
+.gpl-root.gpl-comfy-native .gpl-energy-lbl-sm,
+.gpl-root.gpl-comfy-native .gpl-field label,
+.gpl-root.gpl-comfy-native .clbl {
+  color: color-mix(in srgb, var(--violet, #7c6bb0) 35%, #aaa) !important;
+  font-family: system-ui, sans-serif !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+}
+
+/* Kill per-section title/dot colour roles — all match shell accent */
+.gpl-root.gpl-comfy-native .gpl-sec-shot .gpl-sec-title,
+.gpl-root.gpl-comfy-native .gpl-sec-scene .gpl-sec-title,
+.gpl-root.gpl-comfy-native .gpl-sec-voice .gpl-sec-title,
+.gpl-root.gpl-comfy-native .gpl-sec-energy .gpl-sec-title,
+.gpl-root.gpl-comfy-native .gpl-sec-media .gpl-sec-title {
+  color: color-mix(in srgb, var(--violet, #7c6bb0) 55%, #ccc) !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-sec-dot,
+.gpl-root.gpl-comfy-native .gpl-sec-shot .gpl-sec-dot,
+.gpl-root.gpl-comfy-native .gpl-sec-scene .gpl-sec-dot,
+.gpl-root.gpl-comfy-native .gpl-sec-voice .gpl-sec-dot,
+.gpl-root.gpl-comfy-native .gpl-sec-energy .gpl-sec-dot,
+.gpl-root.gpl-comfy-native .gpl-sec-media .gpl-sec-dot {
+  width: 6px !important;
+  height: 6px !important;
+  box-shadow: none !important;
+  background: var(--violet, #7c6bb0) !important;
+  color: var(--violet, #7c6bb0) !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-title {
+  color: color-mix(in srgb, var(--violet, #7c6bb0) 55%, #e8e8e8) !important;
+  font-family: system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-badge {
+  background: color-mix(in srgb, var(--violet, #7c6bb0) 22%, #2a2a2a) !important;
+  border: 1px solid color-mix(in srgb, var(--violet, #7c6bb0) 50%, #4a4a4a) !important;
+  color: #ddd !important;
+  border-radius: 3px !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-tab,
+.gpl-root.gpl-comfy-native .gpl-chip,
+.gpl-root.gpl-comfy-native .gpl-seed-mode-btn {
+  background: #333 !important;
+  border: 1px solid #4a4a4a !important;
+  color: #ccc !important;
+  border-radius: 3px !important;
+  font-family: system-ui, sans-serif !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+}
+
+/* ALL selected controls share one accent (Dialogue / POV / Cast / Energy / tabs) */
+.gpl-root.gpl-comfy-native .gpl-tab.on,
+.gpl-root.gpl-comfy-native .gpl-chip.on,
+.gpl-root.gpl-comfy-native .gpl-chip.on.rose,
+.gpl-root.gpl-comfy-native .gpl-chip.on.cyan,
+.gpl-root.gpl-comfy-native .gpl-chip.pov-f.on,
+.gpl-root.gpl-comfy-native .gpl-chip.pov-m.on,
+.gpl-root.gpl-comfy-native .gpl-chip.pov-off.on,
+.gpl-root.gpl-comfy-native #gpl-cast .gpl-chip.on,
+.gpl-root.gpl-comfy-native #gpl-motion .gpl-chip.on,
+.gpl-root.gpl-comfy-native #gpl-mouth .gpl-chip.on,
+.gpl-root.gpl-comfy-native #gpl-dlg .gpl-chip.on,
+.gpl-root.gpl-comfy-native .gpl-seed-mode-btn.on,
+.gpl-root.gpl-comfy-native .gpl-be-btn.on {
+  background: color-mix(in srgb, var(--violet, #7c6bb0) 58%, #222) !important;
+  border-color: var(--violet, #7c6bb0) !important;
+  color: #f5f2ff !important;
+  box-shadow: none !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-chipgrp,
+.gpl-root.gpl-comfy-native #gpl-dlg.gpl-chipgrp,
+.gpl-root.gpl-comfy-native #gpl-pov.gpl-chipgrp,
+.gpl-root.gpl-comfy-native #gpl-cast.gpl-chipgrp {
+  background: #1f1f1f !important;
+  border: 1px solid color-mix(in srgb, var(--violet, #7c6bb0) 28%, #3a3a3a) !important;
+  box-shadow: none !important;
+  border-radius: 3px !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-field select,
+.gpl-root.gpl-comfy-native .gpl-history,
+.gpl-root.gpl-comfy-native .gpl-cogpanel select,
+.gpl-root.gpl-comfy-native .gpl-cogpanel input[type="text"],
+.gpl-root.gpl-comfy-native .gpl-cogpanel input[type="number"],
+.gpl-root.gpl-comfy-native .gpl-seed-num,
+.gpl-root.gpl-comfy-native #gpl-lora-trig {
+  background: #1a1a1a !important;
+  border: 1px solid #444 !important;
+  border-radius: 2px !important;
+  color: #ddd !important;
+  font-family: system-ui, sans-serif !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+  padding: 5px 8px !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-field select:focus,
+.gpl-root.gpl-comfy-native .gpl-prompt:focus,
+.gpl-root.gpl-comfy-native .gpl-intent:focus,
+.gpl-root.gpl-comfy-native .gpl-out:focus {
+  border-color: var(--violet, #7c6bb0) !important;
+  box-shadow: 0 0 0 1px var(--violet, #7c6bb0) !important;
+  outline: none !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-prompt,
+.gpl-root.gpl-comfy-native .gpl-intent,
+.gpl-root.gpl-comfy-native .gpl-out {
+  background: #1a1a1a !important;
+  border: 1px solid #444 !important;
+  border-radius: 2px !important;
+  color: #ddd !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-btn-gen {
+  background: color-mix(in srgb, var(--violet, #7c6bb0) 62%, #1e1e1e) !important;
+  color: #f5f4fa !important;
+  border: 1px solid var(--violet, #7c6bb0) !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  font-family: system-ui, sans-serif !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-btn-gen.stop {
+  background: #5a3030 !important;
+  border-color: #a05050 !important;
+  color: #f0d0d0 !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-btn-refine,
+.gpl-root.gpl-comfy-native .gpl-btn-prev,
+.gpl-root.gpl-comfy-native .gpl-icon-btn,
+.gpl-root.gpl-comfy-native .gpl-cog,
+.gpl-root.gpl-comfy-native .gpl-seed-dice,
+.gpl-root.gpl-comfy-native .gpl-cog-save {
+  background: #333 !important;
+  border: 1px solid #4a4a4a !important;
+  color: #ccc !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-btn-refine {
+  color: #c9b070 !important;
+  border-color: #6a6040 !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-style-btn {
+  background: #1a1a1a !important;
+  border: 1px solid #444 !important;
+  color: #ddd !important;
+  border-radius: 2px !important;
+  font-family: system-ui, sans-serif !important;
+  font-size: 12px !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-style-menu {
+  background: #2a2a2a !important;
+  border: 1px solid #4a4a4a !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5) !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-style-opt {
+  font-family: system-ui, sans-serif !important;
+  color: #ddd !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-style-opt:hover,
+.gpl-root.gpl-comfy-native .gpl-style-opt.on {
+  background: #3d3a4a !important;
+  color: #eee !important;
+  outline: none !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-cont-strip {
+  background: #1f1f1f !important;
+  border: 1px dashed #444 !important;
+  color: #888 !important;
+  border-radius: 2px !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-cont-strip.has {
+  color: #b0a8c8 !important;
+  border-color: #5a5470 !important;
+  background: #2a2835 !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-st {
+  color: #999 !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-check {
+  color: #aaa !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-check input {
+  accent-color: var(--violet, #7c6bb0) !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-cogpanel {
+  background: #252525 !important;
+  border: 1px solid #3a3a3a !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.55) !important;
+  border-radius: 4px !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-ta-grip {
+  opacity: 0.35 !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-seed-strip {
+  background: transparent !important;
+  border: none !important;
+}
+
+.gpl-root.gpl-comfy-native .gpl-be-btn {
+  background: #333 !important;
+  border: 1px solid #4a4a4a !important;
+  color: #ccc !important;
+  border-radius: 3px !important;
+}
+
+/* Dim fancy theme picker when native is on (still visible but secondary) */
+.gpl-root.gpl-comfy-native #gpl-theme {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Advanced settings accordion (node size + fine layout) */
+.gpl-adv {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.1);
+  padding-top: 6px;
+}
+.gpl-adv-sum {
+  cursor: pointer;
+  list-style: none;
+  font: 700 11px "JetBrains Mono", system-ui, sans-serif;
+  letter-spacing: .04em;
+  color: var(--muted, #8a7fa8);
+  padding: 8px 4px;
+  user-select: none;
+  border-radius: 6px;
+}
+.gpl-adv-sum::-webkit-details-marker { display: none; }
+.gpl-adv-sum::before {
+  content: "? ";
+  color: var(--gold, #ffc857);
+  font-weight: 700;
+}
+.gpl-adv[open] > .gpl-adv-sum::before { content: "? "; }
+.gpl-adv-sum:hover {
+  color: var(--text, #eee);
+  background: rgba(255,255,255,.04);
+}
+.gpl-adv-body {
+  padding: 4px 2px 8px;
+}
+.gpl-root.gpl-comfy-native .gpl-adv-sum {
+  font-family: system-ui, sans-serif !important;
+  color: #aaa !important;
+}
+.gpl-root.gpl-comfy-native .gpl-adv-sum::before {
+  color: #c9b070 !important;
 }

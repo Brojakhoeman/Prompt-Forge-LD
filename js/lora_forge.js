@@ -15,6 +15,10 @@ import {
   resolveTheme,
   loadSharedThemeKey,
   saveSharedThemeKey,
+  applyComfyAccentVars,
+  ensureComfyNativeShell,
+  COMFY_DEFAULT_NODE_COLOR,
+  COMFY_DEFAULT_NODE_BG,
 } from "./themes_ld.js";
 
 const THEME_ORDER = THEME_KEYS.slice();
@@ -30,11 +34,13 @@ const shortName = (lora) =>
   lora === "None" ? "None" : lora.split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
 
 /* ----------------------------------------------------------------- styles */
-const STYLE_ID = "lfld-styles-v3";
+const STYLE_ID = "lfld-styles-v6";
 function ensureStyles() {
   // Replace older injects so theme CSS updates after reload
-  const old = document.getElementById("lfld-styles");
-  if (old) old.remove();
+  ["lfld-styles", "lfld-styles-v3", "lfld-styles-v4", "lfld-styles-v5"].forEach((id) => {
+    const old = document.getElementById(id);
+    if (old) old.remove();
+  });
   if (document.getElementById(STYLE_ID)) return;
   const el = document.createElement("style");
   el.id = STYLE_ID;
@@ -54,13 +60,19 @@ function ensureStyles() {
   border:1px solid var(--line);
   transition: background .25s ease, color .2s ease, border-color .2s ease;
 }
-.lfld-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.lfld-tools { display:flex; align-items:center; gap:6px; }
-.lfld-theme-btn {
+.lfld-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.lfld-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.lfld-theme-btn, .lfld-native-btn {
   font:600 11px 'JetBrains Mono',monospace; color:var(--accent);
   padding:5px 12px; border-radius:99px; cursor:pointer; white-space:nowrap;
   background:color-mix(in srgb, var(--accent) 12%, transparent);
   border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  user-select:none;
+}
+.lfld-native-btn.on {
+  color:#e0e0e0;
+  background:#3d3a4a;
+  border-color:#6b6280;
 }
 .lfld-mini {
   width:26px; height:26px; border-radius:7px; cursor:pointer;
@@ -72,6 +84,92 @@ function ensureStyles() {
 }
 .lfld-mini.rm { background:rgba(255,107,107,.12); border-color:rgba(255,107,107,.4); color:#ff8f8f; }
 .lfld-mini:hover { filter:brightness(1.25); }
+
+/* ── ComfyUI native look — match PromptForge shell accent (not blue) ── */
+.lfld-root.lfld-comfy-native {
+  --bg:#1a1a1a; --panel:#252525; --text:#ececec; --muted:#a8a8a8;
+  --gold:#7c6bb0; --cyan:#7c6bb0; --violet:#7c6bb0; --rose:#7c6bb0; --mint:#7c6bb0;
+  --line:rgba(255,255,255,.14);
+  --str:#7c6bb0; --vc:#7c6bb0; --ac:#7c6bb0; --accent:#7c6bb0; --on-color:#7c6bb0;
+  --comfy-accent:#7c6bb0; --comfy-on:#7c6bb0; --comfy-off:#f07178;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif !important;
+  background:#1a1a1a !important;
+  border:1px solid color-mix(in srgb, var(--violet, #7c6bb0) 55%, #3a3a3a) !important;
+  border-radius:4px !important;
+  box-shadow:inset 0 2px 0 0 color-mix(in srgb, var(--violet, #7c6bb0) 70%, transparent) !important;
+}
+.lfld-root.lfld-comfy-native .lfld-title {
+  background:none !important; -webkit-background-clip:unset !important; background-clip:unset !important;
+  color:color-mix(in srgb, var(--violet, #7c6bb0) 55%, #e8e8e8) !important; filter:none !important;
+  font:600 16px system-ui,sans-serif !important;
+}
+/* Idle chrome = same grey as PF chips */
+.lfld-root.lfld-comfy-native .lfld-theme-btn,
+.lfld-root.lfld-comfy-native .lfld-native-btn,
+.lfld-root.lfld-comfy-native .lfld-mini,
+.lfld-root.lfld-comfy-native .lfld-on,
+.lfld-root.lfld-comfy-native .lfld-pick-btn {
+  font-family:system-ui,sans-serif !important;
+  border-radius:3px !important;
+  background:#333 !important;
+  border:1px solid #4a4a4a !important;
+  color:#ccc !important;
+  box-shadow:none !important;
+}
+/* Selected / active = same purple mix as PF .gpl-chip.on */
+.lfld-root.lfld-comfy-native .lfld-native-btn.on,
+.lfld-root.lfld-comfy-native .lfld-on.on,
+.lfld-root.lfld-comfy-native .lfld-mini {
+  background:color-mix(in srgb, var(--violet, #7c6bb0) 58%, #222) !important;
+  border-color:var(--violet, #7c6bb0) !important;
+  color:#f5f2ff !important;
+  box-shadow:none !important;
+}
+.lfld-root.lfld-comfy-native .lfld-theme-btn { opacity:0.4; pointer-events:none; }
+/* OFF / remove stay red so disabled ≠ selected */
+.lfld-root.lfld-comfy-native .lfld-on.off {
+  color:#ffd0d0 !important;
+  background:color-mix(in srgb, var(--comfy-off, #f07178) 28%, #1e1e1e) !important;
+  border-color:var(--comfy-off, #f07178) !important;
+  box-shadow:none !important;
+}
+.lfld-root.lfld-comfy-native .lfld-mini.rm {
+  color:#ffd0d0 !important;
+  border-color:var(--comfy-off, #f07178) !important;
+  background:color-mix(in srgb, var(--comfy-off, #f07178) 28%, #1e1e1e) !important;
+}
+/* Row = same panel tint as PF Shot/Scene/Voice */
+.lfld-root.lfld-comfy-native .lfld-row {
+  background:color-mix(in srgb, var(--violet, #7c6bb0) 10%, #252525) !important;
+  border:1px solid color-mix(in srgb, var(--violet, #7c6bb0) 38%, #3a3a3a) !important;
+  border-radius:3px !important;
+  color:#e8e8e8 !important;
+}
+.lfld-root.lfld-comfy-native .lfld-pick-btn {
+  background:#1a1a1a !important;
+  border-color:color-mix(in srgb, var(--violet, #7c6bb0) 28%, #444) !important;
+  color:#e8e8e8 !important;
+}
+.lfld-root.lfld-comfy-native .lfld-menu {
+  background:#252525 !important;
+  border:1px solid color-mix(in srgb, var(--violet, #7c6bb0) 38%, #3a3a3a) !important;
+}
+.lfld-root.lfld-comfy-native .lfld-menu-search {
+  background:#1a1a1a !important; color:#ddd !important; font-family:system-ui,sans-serif !important;
+}
+.lfld-root.lfld-comfy-native .lfld-menu-item:hover,
+.lfld-root.lfld-comfy-native .lfld-menu-item.active {
+  background:color-mix(in srgb, var(--violet, #7c6bb0) 48%, #2a2a2a) !important; color:#f5f2ff !important;
+}
+.lfld-root.lfld-comfy-native .lfld-cup {
+  border-color:color-mix(in srgb, var(--violet, #7c6bb0) 30%, #555) !important;
+  background:#1a1a1a !important;
+}
+.lfld-root.lfld-comfy-native .lfld-keys { color:#888 !important; font-family:system-ui,sans-serif !important; }
+.lfld-root.lfld-comfy-native .lfld-keys .kv,
+.lfld-root.lfld-comfy-native .lfld-keys .ka {
+  color:color-mix(in srgb, var(--violet, #7c6bb0) 40%, #aaa) !important;
+}
 
 .lfld-rows { display:flex; flex-direction:column; gap:6px; }
 .lfld-row {
@@ -180,6 +278,28 @@ app.registerExtension({
     if (node.comfyClass !== "LoraForgeLD") return;
     ensureStyles();
 
+    // Drop experimental sockets (trigger_words / loaded_keys_info) left from older builds
+    // Current Python only returns model + clip.
+    const stripExtraOutputs = () => {
+      if (!node.outputs?.length) return;
+      for (let i = node.outputs.length - 1; i >= 0; i--) {
+        const n = String(node.outputs[i]?.name || "").toLowerCase();
+        if (n === "model" || n === "clip") continue;
+        try {
+          // Prefer LiteGraph API if present
+          if (typeof node.removeOutput === "function") node.removeOutput(i);
+          else node.outputs.splice(i, 1);
+        } catch {
+          try { node.outputs.splice(i, 1); } catch { /* */ }
+        }
+      }
+      try { node.setDirtyCanvas?.(true, true); } catch { /* */ }
+    };
+    stripExtraOutputs();
+    // Again after configure (workflow restore can re-add ghost links)
+    setTimeout(stripExtraOutputs, 0);
+    setTimeout(stripExtraOutputs, 200);
+
     node.properties = node.properties || {};
     // Prefer shared PromptForge theme; map legacy a/b/c via resolveTheme
     if (!node.properties.theme) {
@@ -187,11 +307,18 @@ app.registerExtension({
     } else {
       node.properties.theme = resolveTheme(node.properties.theme).id;
     }
+    let comfyNative = localStorage.getItem("pfld_comfy_native") === "1";
+    let _lfColorWatch = null;
+    let _lfLastColorKey = "";
     {
-      const { theme: bootT } = resolveTheme(node.properties.theme);
-      if (bootT.node) {
-        node.color = bootT.node.color;
-        node.bgcolor = bootT.node.bgcolor;
+      if (comfyNative) {
+        ensureComfyNativeShell(node);
+      } else {
+        const { theme: bootT } = resolveTheme(node.properties.theme);
+        if (bootT.node) {
+          node.color = bootT.node.color;
+          node.bgcolor = bootT.node.bgcolor;
+        }
       }
     }
     if (!node.properties.stack_data) {
@@ -240,7 +367,38 @@ app.registerExtension({
     const container = document.createElement("div");
     container.className = "lfld-root";
 
+    const syncLfComfyAccents = () => {
+      if (!comfyNative) return;
+      const c = node.color || COMFY_DEFAULT_NODE_COLOR;
+      const bg = node.bgcolor || COMFY_DEFAULT_NODE_BG;
+      const key = `${c}|${bg}`;
+      if (key === _lfLastColorKey) return;
+      _lfLastColorKey = key;
+      applyComfyAccentVars(container, c, bg);
+    };
+    const startLfColorWatch = () => {
+      stopLfColorWatch();
+      syncLfComfyAccents();
+      _lfColorWatch = setInterval(syncLfComfyAccents, 250);
+    };
+    const stopLfColorWatch = () => {
+      if (_lfColorWatch) { clearInterval(_lfColorWatch); _lfColorWatch = null; }
+      _lfLastColorKey = "";
+    };
+
     const applyThemeVars = () => {
+      container.classList.toggle("lfld-comfy-native", comfyNative);
+      if (comfyNative) {
+        // Follow Comfy colour dots; near-black theme leftovers → default purple
+        try {
+          ensureComfyNativeShell(node);
+        } catch { /* */ }
+        _lfLastColorKey = ""; // force accent re-apply
+        syncLfComfyAccents();
+        startLfColorWatch();
+        return;
+      }
+      stopLfColorWatch();
       const { id, theme } = resolveTheme(node.properties.theme);
       node.properties.theme = id;
       const t = theme.lf;
@@ -263,6 +421,36 @@ app.registerExtension({
       }
     };
 
+    const setComfyNative = (on, save = true) => {
+      comfyNative = !!on;
+      if (save) {
+        try { localStorage.setItem("pfld_comfy_native", comfyNative ? "1" : "0"); } catch { /* */ }
+        try {
+          window.dispatchEvent(new CustomEvent("pfld-comfy-native", { detail: { on: comfyNative } }));
+        } catch { /* */ }
+      }
+      build();
+      try { node.setDirtyCanvas(true, true); } catch { /* */ }
+    };
+
+    // Stay in sync when PromptForge toggles native look (same tab + other tabs)
+    window.addEventListener("storage", (e) => {
+      if (e.key === "pfld_comfy_native") {
+        comfyNative = e.newValue === "1";
+        build();
+      }
+      if (e.key === "pfld_theme" && e.newValue && !comfyNative) {
+        node.properties.theme = e.newValue;
+        build();
+      }
+    });
+    window.addEventListener("pfld-comfy-native", (e) => {
+      const on = !!(e?.detail?.on);
+      if (on === comfyNative) return;
+      comfyNative = on;
+      build();
+    });
+
     const build = () => {
       const { id, theme } = resolveTheme(node.properties.theme);
       node.properties.theme = id;
@@ -274,7 +462,8 @@ app.registerExtension({
 <div class="lfld-head">
   <span class="lfld-title">✦ LoraForge LD</span>
   <div class="lfld-tools">
-    <div class="lfld-theme-btn" id="lfld-theme" title="Cycle theme (matches PromptForge)">THEME: ${t.name}</div>
+    <div class="lfld-native-btn${comfyNative ? " on" : ""}" id="lfld-native" title="Stock Comfy dark widgets — same toggle as PromptForge">Comfy native${comfyNative ? " ✓" : ""}</div>
+    <div class="lfld-theme-btn" id="lfld-theme" title="Cycle theme (matches PromptForge; off while Comfy native)">THEME: ${t.name}</div>
     <div class="lfld-mini" id="lfld-add" title="Add slot">+</div>
     ${data.length > 1 ? `<div class="lfld-mini rm" id="lfld-del" title="Remove last slot">−</div>` : ""}
   </div>
@@ -310,7 +499,11 @@ app.registerExtension({
         rowsEl.appendChild(rowEl);
       });
 
+      container.querySelector("#lfld-native").onclick = () => {
+        setComfyNative(!comfyNative, true);
+      };
       container.querySelector("#lfld-theme").onclick = () => {
+        if (comfyNative) return; // disabled in native mode
         const cur = resolveTheme(node.properties.theme).id;
         const idx = Math.max(0, THEME_ORDER.indexOf(cur));
         const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
@@ -497,6 +690,7 @@ app.registerExtension({
     const _onRemoved = node.onRemoved;
     node.onRemoved = function () {
       if (node._lfldPin) cancelAnimationFrame(node._lfldPin);
+      stopLfColorWatch();
       _onRemoved?.apply(this, arguments);
     };
 
@@ -530,6 +724,7 @@ app.registerExtension({
           pickValid(w?.value) ||
           JSON.stringify([{ on: true, lora: "None", str: 1.0, vs: 1.0, as: 1.0 }]);
         if (w) w.value = node.properties.stack_data;
+        stripExtraOutputs();
         build();
         // Keep the workflow-saved size; only grow if restored rows truly don't fit.
         const savedW = Math.max(node.size?.[0] || MIN_W, MIN_W);

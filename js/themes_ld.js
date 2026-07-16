@@ -7,6 +7,17 @@
  *   pf     — CSS vars for .gpl-root (PromptForge)
  *   lf     — tokens for LoraForge cups / chrome
  *   node   — Comfy node shell colors (LiteGraph title bar)
+ *
+ * Role vars (PF):
+ *   --bg --panel --text --muted --line --glow-a --glow-b
+ *   --gold  → highlights / energy / intent labels
+ *   --cyan  → shot / cool accents
+ *   --violet → primary accent (chips on, script box, scene) — NOT always purple
+ *   --rose  → voice / POV heat
+ *   --mint  → media / detailer / success-ish
+ *
+ * Minimal themes (slate / graphite / concrete / mono) keep ALL role colours
+ * in the grey range so no purple textareas or candy zone fills.
  */
 export const THEME_KEYS = [
   "default",
@@ -19,11 +30,25 @@ export const THEME_KEYS = [
   "ember",
   "ocean",
   "mono",
-  // Minimal / dull — get the job done, no candy
+  // Minimal / dull — workbench, not candy
   "slate",
   "graphite",
   "concrete",
 ];
+
+/** Pure greyscale role set — graphite/slate-style (no blue cast). */
+function monoRoles(base = {}) {
+  return {
+    "--gold": "#b4b4b4",
+    "--cyan": "#a8a8a8",
+    "--violet": "#9c9c9c",
+    "--rose": "#b0b0b0",
+    "--mint": "#a4a4a4",
+    "--glow-a": "rgba(0,0,0,0)",
+    "--glow-b": "rgba(0,0,0,0)",
+    ...base,
+  };
+}
 
 export const THEMES = {
   default: {
@@ -314,133 +339,136 @@ export const THEMES = {
     node: { color: "#0c1c24", bgcolor: "#040e14" },
   },
 
+  // True neutral greys (slight cool edge only)
   mono: {
     name: "Mono",
     pf: {
-      "--bg": "#0a0a0c",
-      "--panel": "rgba(20, 20, 24, 0.94)",
-      "--text": "#ececef",
-      "--muted": "#888890",
-      "--gold": "#c8c8d0",
-      "--cyan": "#a0a0a8",
-      "--violet": "#909098",
-      "--rose": "#b0b0b8",
-      "--mint": "#9898a0",
-      "--line": "rgba(255,255,255,.10)",
-      "--glow-a": "rgba(200,200,210,.08)",
-      "--glow-b": "rgba(160,160,170,.06)",
+      "--bg": "#0a0a0a",
+      "--panel": "rgba(22, 22, 22, 0.96)",
+      "--text": "#ececec",
+      "--muted": "#7a7a7a",
+      "--line": "rgba(255,255,255,.09)",
+      ...monoRoles({
+        "--gold": "#c8c8c8",
+        "--cyan": "#b0b0b0",
+        "--violet": "#a8a8a8",
+        "--rose": "#bcbcbc",
+        "--mint": "#b4b4b4",
+      }),
     },
     lf: {
-      str: "#c8c8d0",
-      v: "#a0a0a8",
-      a: "#909098",
-      on: "#d0d0d8",
-      off: "#a06060",
-      accent: "#c8c8d0",
-      bg: "#0a0a0c",
-      panel: "rgba(255,255,255,.03)",
-      text: "#ececef",
-      muted: "#888890",
-      line: "rgba(255,255,255,.10)",
+      str: "#c8c8c8",
+      v: "#b0b0b0",
+      a: "#a8a8a8",
+      on: "#e0e0e0",
+      off: "#888888",
+      accent: "#c8c8c8",
+      bg: "#0a0a0a",
+      panel: "rgba(255,255,255,.04)",
+      text: "#ececec",
+      muted: "#7a7a7a",
+      line: "rgba(255,255,255,.09)",
     },
-    node: { color: "#1a1a1e", bgcolor: "#0c0c0e" },
+    node: { color: "#1c1c1c", bgcolor: "#0c0c0c" },
   },
 
   // ── Minimal / dull (Comfy-stack energy — workbench, not candy) ───────────
   slate: {
     name: "Slate",
     pf: {
-      "--bg": "#1a1a1a",
-      "--panel": "rgba(36, 36, 36, 0.96)",
-      "--text": "#d0d0d0",
-      "--muted": "#6e6e6e",
-      "--gold": "#9a9a9a",
-      "--cyan": "#8a8a8a",
-      "--violet": "#7a7a7a",
-      "--rose": "#8e8e8e",
-      "--mint": "#858585",
+      "--bg": "#181818",
+      "--panel": "rgba(34, 34, 34, 0.97)",
+      "--text": "#d2d2d2",
+      "--muted": "#6a6a6a",
       "--line": "rgba(255,255,255,.07)",
-      "--glow-a": "rgba(0,0,0,.0)",
-      "--glow-b": "rgba(0,0,0,.0)",
+      ...monoRoles({
+        "--gold": "#9e9e9e",
+        "--cyan": "#8e8e8e",
+        "--violet": "#868686",
+        "--rose": "#949494",
+        "--mint": "#8a8a8a",
+      }),
     },
     lf: {
-      str: "#9a9a9a",
-      v: "#8a8a8a",
-      a: "#7a7a7a",
-      on: "#b0b0b0",
-      off: "#6a6a6a",
-      accent: "#9a9a9a",
-      bg: "#1a1a1a",
+      str: "#9e9e9e",
+      v: "#8e8e8e",
+      a: "#868686",
+      on: "#b8b8b8",
+      off: "#5e5e5e",
+      accent: "#9e9e9e",
+      bg: "#181818",
       panel: "rgba(255,255,255,.04)",
-      text: "#d0d0d0",
-      muted: "#6e6e6e",
+      text: "#d2d2d2",
+      muted: "#6a6a6a",
       line: "rgba(255,255,255,.07)",
     },
-    node: { color: "#2a2a2a", bgcolor: "#161616" },
+    node: { color: "#282828", bgcolor: "#141414" },
   },
 
+  // Graphite = basically black & white (no purple, no blue cast)
   graphite: {
     name: "Graphite",
     pf: {
-      "--bg": "#121214",
-      "--panel": "rgba(28, 28, 32, 0.96)",
-      "--text": "#c8c8cc",
-      "--muted": "#5c5c64",
-      "--gold": "#8b8b94",
-      "--cyan": "#7a7a84",
-      "--violet": "#6e6e78",
-      "--rose": "#82828a",
-      "--mint": "#767680",
-      "--line": "rgba(255,255,255,.06)",
-      "--glow-a": "rgba(0,0,0,.0)",
-      "--glow-b": "rgba(0,0,0,.0)",
+      "--bg": "#0c0c0c",
+      "--panel": "rgba(24, 24, 24, 0.98)",
+      "--text": "#e6e6e6",
+      "--muted": "#6e6e6e",
+      "--line": "rgba(255,255,255,.08)",
+      ...monoRoles({
+        "--gold": "#b8b8b8",
+        "--cyan": "#a8a8a8",
+        "--violet": "#9a9a9a",
+        "--rose": "#b0b0b0",
+        "--mint": "#a4a4a4",
+      }),
     },
     lf: {
-      str: "#8b8b94",
-      v: "#7a7a84",
-      a: "#6e6e78",
-      on: "#a0a0a8",
-      off: "#5a5a62",
-      accent: "#8b8b94",
-      bg: "#121214",
-      panel: "rgba(255,255,255,.035)",
-      text: "#c8c8cc",
-      muted: "#5c5c64",
-      line: "rgba(255,255,255,.06)",
+      str: "#b8b8b8",
+      v: "#a8a8a8",
+      a: "#9a9a9a",
+      on: "#e0e0e0",
+      off: "#666666",
+      accent: "#b8b8b8",
+      bg: "#0c0c0c",
+      panel: "rgba(255,255,255,.04)",
+      text: "#e6e6e6",
+      muted: "#6e6e6e",
+      line: "rgba(255,255,255,.08)",
     },
-    node: { color: "#222226", bgcolor: "#0e0e10" },
+    node: { color: "#1e1e1e", bgcolor: "#0a0a0a" },
   },
 
+  // Warm concrete grey only — still colourless
   concrete: {
     name: "Concrete",
     pf: {
-      "--bg": "#1c1b1a",
-      "--panel": "rgba(40, 38, 36, 0.96)",
-      "--text": "#c4c0ba",
-      "--muted": "#6a6660",
-      "--gold": "#908880",
-      "--cyan": "#807870",
-      "--violet": "#787068",
-      "--rose": "#888078",
-      "--mint": "#7c746c",
-      "--line": "rgba(255,255,255,.06)",
-      "--glow-a": "rgba(0,0,0,.0)",
-      "--glow-b": "rgba(0,0,0,.0)",
+      "--bg": "#141312",
+      "--panel": "rgba(32, 30, 28, 0.97)",
+      "--text": "#d8d4ce",
+      "--muted": "#6e6a64",
+      "--line": "rgba(255,255,255,.07)",
+      "--gold": "#a8a098",
+      "--cyan": "#989088",
+      "--violet": "#908880",
+      "--rose": "#a09890",
+      "--mint": "#948c84",
+      "--glow-a": "rgba(0,0,0,0)",
+      "--glow-b": "rgba(0,0,0,0)",
     },
     lf: {
-      str: "#908880",
-      v: "#807870",
-      a: "#787068",
-      on: "#a09890",
+      str: "#a8a098",
+      v: "#989088",
+      a: "#908880",
+      on: "#c0b8b0",
       off: "#5c5850",
-      accent: "#908880",
-      bg: "#1c1b1a",
+      accent: "#a8a098",
+      bg: "#141312",
       panel: "rgba(255,255,255,.035)",
-      text: "#c4c0ba",
-      muted: "#6a6660",
-      line: "rgba(255,255,255,.06)",
+      text: "#d8d4ce",
+      muted: "#6e6a64",
+      line: "rgba(255,255,255,.07)",
     },
-    node: { color: "#2c2a28", bgcolor: "#141312" },
+    node: { color: "#262422", bgcolor: "#100f0e" },
   },
 };
 
@@ -472,4 +500,169 @@ export function saveSharedThemeKey(key) {
   try {
     localStorage.setItem("pfld_theme", key);
   } catch { /* */ }
+}
+
+/* ── Comfy native: derive panel accents from LiteGraph node.color ─────────── */
+
+/** Parse #rgb / #rrggbb / rgb() → {r,g,b} or null. */
+export function parseCssColor(c) {
+  if (c == null || c === "") return null;
+  const s = String(c).trim();
+  if (s.startsWith("#")) {
+    let h = s.slice(1);
+    if (h.length === 3) h = h.split("").map((ch) => ch + ch).join("");
+    if (h.length !== 6 || /[^0-9a-f]/i.test(h)) return null;
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
+  const m = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) return { r: +m[1], g: +m[2], b: +m[3] };
+  return null;
+}
+
+function _hex({ r, g, b }) {
+  const c = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+function _mix(a, b, t) {
+  return {
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  };
+}
+
+/** Typical Comfy title-bar purple when node has no colour set yet. */
+export const COMFY_DEFAULT_NODE_COLOR = "#7c6bb0";
+export const COMFY_DEFAULT_NODE_BG = "#1e1e1e";
+
+/** Relative luminance 0–1 (sRGB approx). */
+function _luma({ r, g, b }) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/**
+ * Theme packs paint near-black shells. Those read as "no colour" in native mode
+ * (inner UI is also dark → accents look grey). Treat them as unset for native seed.
+ */
+export function isNearBlackShell(color) {
+  const p = parseCssColor(color);
+  if (!p) return true;
+  return _luma(p) < 0.14;
+}
+
+/**
+ * Lift a dark shell colour into a mid-bright accent that still keeps the same hue.
+ * Comfy dots often set deep title colours; chips need something readable on #252525.
+ */
+export function liftToAccentColor(rgb, targetLuma = 0.48) {
+  if (!rgb) return parseCssColor(COMFY_DEFAULT_NODE_COLOR);
+  let { r, g, b } = rgb;
+  let L = _luma(rgb);
+  if (L >= targetLuma) return rgb;
+  // Scale channels up until luminance hits target (preserves hue ratios)
+  if (L < 0.02) {
+    // Near pure black / unknown → default purple accent
+    return parseCssColor(COMFY_DEFAULT_NODE_COLOR);
+  }
+  const scale = Math.min(4.5, targetLuma / L);
+  r = Math.min(255, r * scale);
+  g = Math.min(255, g * scale);
+  b = Math.min(255, b * scale);
+  // If still dark (channel clamp), mix toward white
+  let out = { r, g, b };
+  let L2 = _luma(out);
+  if (L2 < targetLuma) {
+    out = _mix(out, { r: 255, g: 255, b: 255 }, Math.min(0.55, (targetLuma - L2) * 1.4));
+  }
+  return out;
+}
+
+/**
+ * Ensure LiteGraph shell has a visible colour under native look.
+ * - Empty / near-black (theme pack leftovers) → Comfy default purple
+ * - User palette pick (mid/bright) → leave alone
+ * Returns { color, bgcolor } after any fix.
+ */
+export function ensureComfyNativeShell(node) {
+  if (!node) return { color: COMFY_DEFAULT_NODE_COLOR, bgcolor: COMFY_DEFAULT_NODE_BG };
+  const cur = String(node.color || "").trim();
+  if (!cur || cur === "null" || cur === "undefined" || isNearBlackShell(cur)) {
+    node.color = COMFY_DEFAULT_NODE_COLOR;
+  }
+  if (!node.bgcolor || isNearBlackShell(node.bgcolor)) {
+    // Body stays dark (Comfy-like) but not pure black
+    node.bgcolor = COMFY_DEFAULT_NODE_BG;
+  }
+  try { node.setDirtyCanvas?.(true, true); } catch { /* */ }
+  return { color: node.color, bgcolor: node.bgcolor };
+}
+
+/**
+ * Build CSS vars for native mode.
+ *
+ * Shell (LiteGraph): node.color / node.bgcolor stay whatever Comfy's colour dots set
+ * (we do NOT paint the whole inner UI that colour — unreadable).
+ *
+ * Inner widgets: always dark readable surfaces.
+ * Accents (chips, Generate, borders): lifted from node.color so they actually show.
+ * Semantic controls: fixed blue ON / red OFF for clarity.
+ *
+ * @param {string} nodeColor  LiteGraph node.color (title bar / accent)
+ * @param {string} [nodeBg]   LiteGraph node.bgcolor (unused for fills — kept for API)
+ */
+export function comfyAccentVarsFromNodeColor(nodeColor, nodeBg) {
+  const white = { r: 255, g: 255, b: 255 };
+  // Prefer title colour; fall back to body colour if title missing
+  const raw =
+    parseCssColor(nodeColor) ||
+    parseCssColor(nodeBg) ||
+    parseCssColor(COMFY_DEFAULT_NODE_COLOR);
+  // Lift dark theme shells so selected chips / Generate read as real colour
+  const base = liftToAccentColor(raw, 0.48);
+
+  const accent = _hex(base);
+  const soft = _hex(_mix(base, white, 0.28));
+  const pale = _hex(_mix(base, white, 0.45));
+  // Fixed semantic colours (always readable on dark panels)
+  const onBlue = "#5eb8f0";
+  const offRed = "#f07178";
+
+  return {
+    // One shell accent for chips + section panels (no cyan/rose/gold mix-up)
+    "--violet": accent,
+    "--accent": accent,
+    "--cyan": accent,
+    "--gold": soft,
+    "--rose": accent,
+    "--mint": soft,
+    // Match PromptForge selected chips (shell hue); OFF/remove still red below
+    "--on-color": accent,
+    "--str": soft,
+    "--vc": soft,
+    "--ac": accent,
+    // INNER UI always dark — never fill boxes with the node shell colour
+    "--bg": "#1a1a1a",
+    "--panel": "#252525",
+    "--line": "rgba(255,255,255,0.14)",
+    "--text": "#ececec",
+    "--muted": "#a8a8a8",
+    "--glow-a": "transparent",
+    "--glow-b": "transparent",
+    "--comfy-accent": accent,
+    "--comfy-accent-soft": soft,
+    "--comfy-on": accent,
+    "--comfy-off": offRed,
+  };
+}
+
+/** Apply accent map onto an element (inline style). */
+export function applyComfyAccentVars(el, nodeColor, nodeBg) {
+  if (!el) return;
+  const vars = comfyAccentVarsFromNodeColor(nodeColor, nodeBg);
+  Object.entries(vars).forEach(([k, v]) => el.style.setProperty(k, v));
 }

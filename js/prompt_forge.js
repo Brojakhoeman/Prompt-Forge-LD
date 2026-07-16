@@ -11,6 +11,10 @@ import {
   themeOptionsHtml,
   loadSharedThemeKey,
   saveSharedThemeKey,
+  applyComfyAccentVars,
+  ensureComfyNativeShell,
+  COMFY_DEFAULT_NODE_COLOR,
+  COMFY_DEFAULT_NODE_BG,
 } from "./themes_ld.js";
 
 const HIDE = [
@@ -78,8 +82,8 @@ function ensureStyles() {
     // Fallback for ComfyUI asset serving
     link.href = "/extensions/PromptForgeLD/js/prompt_forge.css";
   }
-  // Bust cache when LoRA triggers / header seed ship
-  link.href += (link.href.includes("?") ? "&" : "?") + "v=loratrig1";
+  // Bust cache: native shell vs inner accents
+  link.href += (link.href.includes("?") ? "&" : "?") + "v=comfynative5";
   document.head.appendChild(link);
 }
 
@@ -370,8 +374,70 @@ function hideWidget(w) {
   if (w.element) w.element.style.display = "none";
 }
 
+/**
+ * Capture Comfy Queue / Run: free managed LLM *before* the graph starts so LTX
+ * can load. Generate leaves the model warm; this is the hand-off.
+ *
+ * CRITICAL: do NOT await a full unload_all_models here — that stalls the click
+ * 5–10s when VRAM is packed. Fast kill = process only (+ light CUDA clear),
+ * capped wait so Queue always proceeds quickly. node.run() also free()s.
+ */
+function installPfldQueueKillHook() {
+  if (typeof window !== "undefined" && window.__pfldQueueKillHook) return;
+  if (typeof window !== "undefined") window.__pfldQueueKillHook = true;
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  async function killBeforeQueue(reason) {
+    try { window.__pfldVideoTookVram = true; } catch { /* */ }
+    try {
+      console.log(`[PromptForgeLD] ${reason} → fast free LLM (no full unload wait)`);
+      // Fire fast kill; never block Queue more than ~1.2s even if server is slow
+      const killP = fetch("/pfld/kill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fast: true }),
+      }).catch((e) => console.warn("[PromptForgeLD] pre-queue kill failed:", e));
+      await Promise.race([killP, sleep(1200)]);
+    } catch (e) {
+      console.warn("[PromptForgeLD] pre-queue kill error:", e);
+    }
+  }
+
+  function wrapFn(obj, name) {
+    if (!obj || typeof obj[name] !== "function") return false;
+    const orig = obj[name];
+    if (orig.__pfldKillWrapped) return true;
+    const wrapped = async function (...args) {
+      await killBeforeQueue(`Comfy ${name}`);
+      return orig.apply(this, args);
+    };
+    wrapped.__pfldKillWrapped = true;
+    obj[name] = wrapped;
+    return true;
+  }
+
+  // app.queuePrompt is the classic UI path
+  wrapFn(app, "queuePrompt");
+  // Newer frontends also go through api.queuePrompt
+  try {
+    import("../../scripts/api.js")
+      .then((mod) => {
+        const api = mod?.api || mod?.default;
+        if (api) wrapFn(api, "queuePrompt");
+      })
+      .catch(() => { /* api path optional */ });
+  } catch { /* */ }
+}
+
 app.registerExtension({
   name: "LD.PromptForge",
+
+  async setup() {
+    installPfldQueueKillHook();
+  },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "PromptForgeLD") return;
@@ -386,11 +452,13 @@ app.registerExtension({
 
   async nodeCreated(node) {
     if (node.comfyClass !== "PromptForgeLD") return;
+    // Ensure hook exists even if setup order was weird
+    installPfldQueueKillHook();
     try {
     for (const w of node.widgets || []) hideWidget(w);
 
-    node.color = "#120a1c";
-    node.bgcolor = "#08050f";
+    // Shell colour owned by look mode (Comfy native defaults / theme pack).
+    // Do NOT hardcode near-black here — that made native accents stay grey.
 
     const gw = (n) => node.widgets?.find((w) => w.name === n);
     const sw = (n, v) => { const w = gw(n); if (w) w.value = v; };
@@ -404,6 +472,8 @@ app.registerExtension({
       imgH = 0;
     }
     let draftPrompt = "", generating = false, abortCtrl = null;
+    // Intent string used for the last successful Generate (not Refine) — drives Re-roll UI
+    let lastGenIntent = "";
     let povMode = localStorage.getItem("pfld_pov") || "off";
     let dlgTier = localStorage.getItem("pfld_dlg") || "standard";
     let castMode = localStorage.getItem("pfld_cast") || "pair";
@@ -412,11 +482,15 @@ app.registerExtension({
     let accentPartner = localStorage.getItem("pfld_accent_partner") || "off";
     let motionLevel = localStorage.getItem("pfld_motion") || "normal";
     let mouthHeat = localStorage.getItem("pfld_mouth") || "normal";
-    let keepWarm = localStorage.getItem("pfld_keep_warm") === "1";
+    // Default ON: leave local LLM loaded after Generate until Comfy Queue/Run kills it.
+    // Explicit "0" turns the old free-after-gen behaviour back on.
+    let keepWarm = localStorage.getItem("pfld_keep_warm") !== "0";
     let carryNext = localStorage.getItem("pfld_carry") !== "0"; // default on
     let detailerOn = localStorage.getItem("pfld_detailer") === "1"; // default off (zero tokens)
     // Post-repair scrub (CANON head/torso, silent strip, facing jump…). Default ON.
     let repairOn = localStorage.getItem("pfld_repair") !== "0";
+    // Music background (quiet under) — only meaningful when a music preset is selected
+    let musicBgOn = localStorage.getItem("pfld_music_bg") === "1";
     // Self-check QA pass (extra LLM pass). Default OFF — optional polish.
     let selfCheckOn = localStorage.getItem("pfld_self_check") === "1";
     let selfCheckMode = (localStorage.getItem("pfld_self_check_mode") || "fix").toLowerCase();
@@ -433,6 +507,9 @@ app.registerExtension({
       { id: "no_meta", label: "No meta" },
       { id: "sections", label: "Sections" },
       { id: "gravure_voice", label: "Gravure voice" },
+      { id: "music_plant", label: "Music plant" },
+      { id: "dance_tease", label: "Dance / tease" },
+      { id: "pacing", label: "Pacing / density" },
     ];
     const SELF_CHECK_DEFAULT = ["intent_beats", "talk_floor", "body_unit", "sections", "no_meta"];
     let selfCheckChips = (() => {
@@ -456,7 +533,7 @@ app.registerExtension({
 
     function paintSeedUI() {
       const val = String(lastSeed >>> 0);
-      container.querySelectorAll("#gpl-seed, #gpl-seed-hd").forEach((el) => {
+      container.querySelectorAll("#gpl-seed-hd").forEach((el) => {
         if (el && document.activeElement !== el) el.value = val;
       });
       container.querySelectorAll(".gpl-seed-mode-btn").forEach((b) => {
@@ -482,7 +559,7 @@ app.registerExtension({
       return lastSeed;
     }
     function readSeed() {
-      const n = parseInt($("#gpl-seed-hd")?.value ?? $("#gpl-seed")?.value, 10);
+      const n = parseInt($("#gpl-seed-hd")?.value, 10);
       if (Number.isFinite(n) && n >= 0) {
         lastSeed = n >>> 0;
         try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
@@ -614,7 +691,7 @@ app.registerExtension({
   <div class="gpl-pair-row">
     <div class="gpl-sec gpl-sec-scene">
       <div class="gpl-sec-head">
-        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Where / what structure: camera, scenario, place, music, lead, video style">Scene</span>
+        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Where / what structure: camera, scenario, place, music, video style">Scene</span>
         <label class="gpl-check gpl-check-inline" data-tip="Detailer: skin texture + lighting + max 1 new visual detail per section. Off = zero tokens. Helps I2V keep start-image skin."><input type="checkbox" id="gpl-detailer"> Detailer</label>
       </div>
       <div class="gpl-fields gpl-fields-3-tight">
@@ -627,14 +704,8 @@ app.registerExtension({
           </div>
         </div>
         <div class="gpl-field"><label data-tip="Location / set dressing block">Environment</label><select id="gpl-env" data-tip="Where the clip happens — lighting, props, atmosphere"></select></div>
-        <div class="gpl-field"><label data-tip="Soundtrack groove. Music-video Style hard-hooks this.">Music</label><select id="gpl-music" data-tip="Music / soundtrack preset. Pairs with Music-video style."></select></div>
-        <div class="gpl-field"><label data-tip="Who the primary subject is (she/he/they)">Lead</label>
-          <select id="gpl-lead" data-tip="Lead gender for identity lines and accent profiles">
-            <option value="auto">Auto (intent)</option>
-            <option value="female">Female lead</option>
-            <option value="male">Male lead</option>
-            <option value="neutral">Neutral / they</option>
-          </select>
+        <div class="gpl-field"><label data-tip="Soundtrack groove. Music-video Style hard-hooks this.">Music</label><select id="gpl-music" data-tip="Music / soundtrack preset. Pairs with Music-video style."></select>
+          <label class="gpl-check gpl-check-inline" id="gpl-music-bg-wrap" style="margin-top:4px;display:none" data-tip="Quiet wallpaper score under the scene. Normal speaking voice — music never pauses, but people don't shout over it. Off = loud in-the-mix (club/shout-over)."><input type="checkbox" id="gpl-music-bg"> Background (quiet)</label>
         </div>
         <div class="gpl-field gpl-style-field">
           <label data-tip="Video genre path (not a camera). Hover each style for what it does + an example.">Style</label>
@@ -649,11 +720,20 @@ app.registerExtension({
 
     <div class="gpl-sec gpl-sec-voice">
       <div class="gpl-sec-head">
-        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Accents + continuity carry — how people sound">Voice</span>
+        <span class="gpl-sec-dot"></span><span class="gpl-sec-title" data-tip="Who talks how: lead gender + accent locks + continuity carry">Voice</span>
         <label class="gpl-check gpl-check-inline" data-tip="Carry wardrobe/pose state into the next Generate (continuity)"><input type="checkbox" id="gpl-carry" checked> Carry</label>
         <button type="button" id="gpl-carry-clear" class="gpl-icon-btn" data-tip="Clear stored continuity (fresh wardrobe/pose next Generate)" style="margin-left:2px;font-size:10px;padding:2px 6px" title="Clear continuity">✕</button>
       </div>
-      <div class="gpl-fields gpl-fields-stack">
+      <!-- Lead + accents together — same cast voice identity cluster -->
+      <div class="gpl-fields gpl-fields-voice-3">
+        <div class="gpl-field"><label data-tip="Who the primary subject is (she/he/they) — drives identity + accent look seeds">Lead</label>
+          <select id="gpl-lead" data-tip="Lead gender for identity lines and accent profiles">
+            <option value="auto">Auto (intent)</option>
+            <option value="female">Female lead</option>
+            <option value="male">Male lead</option>
+            <option value="neutral">Neutral / they</option>
+          </select>
+        </div>
         <div class="gpl-field"><label data-tip="Lead speaker accent. T2V also seeds matching look (Scottish freckles ≠ Korean face).">Accent · Lead</label>
           <select id="gpl-accent" data-tip="Accent lock for lead: grammar + voice line + look seed (T2V)">
             <option value="auto">Auto (from intent)</option>
@@ -839,7 +919,7 @@ app.registerExtension({
       <button type="button" class="gpl-btn-prev" id="gpl-preview" data-tip="Show the full system + user prompt the LLM would receive (no generate)">Preview</button>
       <button type="button" class="gpl-btn-prev" id="gpl-copy" data-tip="Copy LTX script to clipboard">Copy</button>
       <button type="button" class="gpl-btn-refine" id="gpl-refine" data-tip="Rewrite current script using Intent as the revision request">Refine</button>
-      <button type="button" class="gpl-btn gpl-btn-gen" id="gpl-gen" data-tip="Generate a new LTX script from all controls + intent">Generate</button>
+      <button type="button" class="gpl-btn gpl-btn-gen" id="gpl-gen" data-tip="Generate a new LTX script from all controls + intent. Same intent again → Re-roll (new seed, model stays warm).">Generate</button>
     </div>
     <div class="gpl-st" id="gpl-st" data-tip="Status: writing, densifying, errors, elapsed"></div>
   </div>
@@ -872,19 +952,19 @@ app.registerExtension({
   <div class="clbl" data-tip="LLM sampling temperature (0 = deterministic, higher = freer)">Sampler temp</div>
   <input type="number" id="gpl-temp" min="0" max="1.5" step="0.05" value="0.55" data-tip="Temperature for script generation">
 
-  <div class="clbl" style="margin-top:10px;opacity:.85" data-tip="Seed controls live in the header (Rand / Fixed / +1 + number)">Seed</div>
-  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:0 0 8px;line-height:1.4">
-    Use the <b style="color:var(--gold)">header</b> strip: <b>Rand</b> / <b>Fixed</b> / <b>+1</b> + number + 🎲.
-    Same seed drives LLM sampling, dialogue banks, and Random scenario/env.
+  <div class="clbl" style="margin-top:10px;border-top:1px solid rgba(255,255,255,.12);padding-top:10px" data-tip="Look &amp; feel of this node panel">Look</div>
+  <label class="gpl-check cog" data-tip="ON = stock Comfy look. Colour dots paint the NODE SHELL; selected chips/Generate use that colour as accent. OFF = theme packs."><input type="checkbox" id="gpl-comfy-native"> ComfyUI native look</label>
+  <div style="font:500 10px system-ui,sans-serif;color:#888;margin:0 0 8px;line-height:1.35">
+    Colour dots → node shell + chip/Generate accents. Inner boxes stay dark so text stays readable (same on LoraForge).
   </div>
-  <div class="gpl-cogrow" style="gap:6px;align-items:center;opacity:.9">
-    <input type="number" id="gpl-seed" min="0" max="2147483647" step="1" value="0" style="flex:1" data-tip="Mirrors header seed">
-    <button type="button" id="gpl-seed-roll" style="flex:0 0 auto;padding:6px 10px;border-radius:6px;border:1px solid color-mix(in srgb,var(--violet) 40%,transparent);background:color-mix(in srgb,var(--violet) 12%,transparent);color:var(--violet);cursor:pointer;font:600 12px JetBrains Mono" data-tip="Roll a new random seed now">🎲</button>
-  </div>
+  <div class="clbl" style="margin-top:4px" data-tip="Colour themes (ignored while ComfyUI native look is ON)">Theme pack</div>
+  <select id="gpl-theme" data-tip="Shared with LoraForge — disabled while ComfyUI native look is on">
+    ${themeOptionsHtml()}
+  </select>
 
-  <div class="clbl" style="margin-top:10px" data-tip="Keep model loaded between generates">Session</div>
-  <label class="gpl-check cog" data-tip="Skip VRAM free after generate — faster iterate, holds VRAM"><input type="checkbox" id="gpl-keep-warm"> Keep LLM warm (no free after gen)</label>
-  <label class="gpl-check cog" data-tip="After the model finishes, run CANON repair (head+torso, silent strip, facing jumps, bra path…). Turn OFF to keep raw model text so you can see what was written before repair. Streaming already shows raw; this controls the final committed script."><input type="checkbox" id="gpl-repair" checked> Post-repair scrub (final pass)</label>
+  <div class="clbl" style="margin-top:10px;border-top:1px solid rgba(255,255,255,.12);padding-top:10px" data-tip="LLM stays loaded after Generate until you press Comfy Queue/Run">Session</div>
+  <label class="gpl-check cog" data-tip="ON (default): LLM stays loaded after Generate/Refine so you can iterate. Comfy Queue/Run kills it and frees VRAM for LTX. OFF = free immediately after each Generate (old behaviour)."><input type="checkbox" id="gpl-keep-warm" checked> Keep LLM warm until Queue/Run</label>
+  <label class="gpl-check cog" data-tip="After the model finishes, run CANON repair (head+torso, silent strip, facing jumps, bra path, and when Music→Background: kill shout-over-music + loud-score lines). Turn OFF to keep raw model text. Streaming already shows raw; this controls the final committed script."><input type="checkbox" id="gpl-repair" checked> Post-repair scrub (final pass)</label>
   <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:0 0 8px;line-height:1.35">
     Stream = raw tokens. When scrub is <b>on</b>, the finished box is repaired. When <b>off</b>, the box keeps raw model output.
   </div>
@@ -904,63 +984,65 @@ app.registerExtension({
   <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 4px">Checklist chips (selected = questions)</div>
   <div id="gpl-self-check-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px"></div>
   <div style="font:500 9px JetBrains Mono;color:#6a6080;margin:0 0 8px;line-height:1.35">
-    Auto-adds I2V / silent / POV / triggers / gravure chips from the shot. Status shows pass·fail after generate.
+    Smart: re-reads Intent into beats + HIT/MISS scan, auto music/dance/pacing. Also auto I2V / silent / POV / triggers / gravure. Status shows pass·fail after generate.
   </div>
 
   <button type="button" class="gpl-cog-save" id="gpl-kill-llm" style="margin-top:8px;background:rgba(180,40,60,.25);border-color:rgba(255,80,100,.35)" data-tip="Stop llama-server and free VRAM">Kill LLM / free VRAM</button>
 
-  <div class="clbl" style="margin-top:8px" data-tip="UI colour theme — matches LoraForge LD themes">Theme</div>
-  <select id="gpl-theme" data-tip="Shared with LoraForge — same palette names on both nodes">
-    ${themeOptionsHtml()}
-  </select>
+  <details class="gpl-adv" id="gpl-adv-layout">
+    <summary class="gpl-adv-sum" data-tip="Node size, insets, hero area, typography — collapsed by default">
+      Advanced · node size &amp; layout
+    </summary>
+    <div class="gpl-adv-body">
+      <div class="clbl" style="margin-top:8px;color:var(--gold)" data-tip="Pinned node shell — drag corner freely (grow + shrink). Default 1400, min 720.">✦ NODE SIZE (drag corner both ways)</div>
+      <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:2px 0 6px;line-height:1.35">
+        Drag the node corner to grow or shrink. Size is saved; content scrolls if shorter than the UI.
+      </div>
+      <div class="gpl-inline" style="margin:4px 0">
+        <label style="min-width:4.5em">Height <span class="val" id="val-node-h">1400</span></label>
+        <input type="range" id="sl-node-h" min="720" max="2400" step="10" value="1400" style="flex:1;accent-color:#ffc857">
+      </div>
+      <div class="gpl-inline" style="margin:4px 0">
+        <label style="min-width:4.5em">Width <span class="val" id="val-node-w">920</span></label>
+        <input type="range" id="sl-node-w" min="580" max="1200" step="10" value="920" style="flex:1;accent-color:#ffc857">
+      </div>
+      <div style="display:flex;gap:6px;margin:6px 0 10px">
+        <button type="button" class="gpl-cog-save" id="gpl-apply-size" style="flex:1;font-size:11px;padding:8px">Apply size</button>
+        <button type="button" id="gpl-size-compact" style="flex:0 0 auto;padding:8px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,200,87,.35);background:rgba(255,200,87,.1);color:var(--gold);cursor:pointer" title="Reset to default 920×1400">Default size</button>
+      </div>
 
-  <div class="clbl" style="margin-top:12px;border-top:1px solid rgba(255,200,87,.35);padding-top:10px;color:var(--gold)" data-tip="Pinned node shell — drag corner freely (grow + shrink). Default 1400, min 720.">✦ NODE SIZE (drag corner both ways)</div>
-  <div style="font:500 10px JetBrains Mono;color:#8a7fa8;margin:2px 0 6px;line-height:1.35">
-    Drag the node corner to grow or shrink. Size is saved; content scrolls if shorter than the UI.
-  </div>
-  <div class="gpl-inline" style="margin:4px 0">
-    <label style="min-width:4.5em">Height <span class="val" id="val-node-h">1400</span></label>
-    <input type="range" id="sl-node-h" min="720" max="2400" step="10" value="1400" style="flex:1;accent-color:#ffc857">
-  </div>
-  <div class="gpl-inline" style="margin:4px 0">
-    <label style="min-width:4.5em">Width <span class="val" id="val-node-w">920</span></label>
-    <input type="range" id="sl-node-w" min="580" max="1200" step="10" value="920" style="flex:1;accent-color:#ffc857">
-  </div>
-  <div style="display:flex;gap:6px;margin:6px 0 10px">
-    <button type="button" class="gpl-cog-save" id="gpl-apply-size" style="flex:1;font-size:11px;padding:8px">Apply size</button>
-    <button type="button" id="gpl-size-compact" style="flex:0 0 auto;padding:8px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,200,87,.35);background:rgba(255,200,87,.1);color:var(--gold);cursor:pointer" title="Reset to default 920×1400">Default size</button>
-  </div>
+      <div class="clbl" style="margin-top:8px;border-top:1px solid rgba(255,255,255,.12);padding-top:8px">Fine layout (optional)</div>
+      <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:2px 0 3px">Insets to cyan border</div>
 
-  <div class="clbl" style="margin-top:8px;border-top:1px solid rgba(255,255,255,.12);padding-top:8px">Fine layout (optional)</div>
-  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:2px 0 3px">Insets to cyan border</div>
+      <div class="gpl-inline" style="margin:1px 0"><label>T <span class="val" id="val-t">-7</span></label><input type="range" id="sl-t" min="-50" max="30" step="1" value="-7" style="flex:1;accent-color:#a855f7"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>R <span class="val" id="val-r">17</span></label><input type="range" id="sl-r" min="-50" max="30" step="1" value="17" style="flex:1;accent-color:#a855f7"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>B <span class="val" id="val-b">13</span></label><input type="range" id="sl-b" min="-50" max="30" step="1" value="13" style="flex:1;accent-color:#a855f7"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>L <span class="val" id="val-l">-3</span></label><input type="range" id="sl-l" min="-50" max="30" step="1" value="-3" style="flex:1;accent-color:#a855f7"></div>
 
-  <div class="gpl-inline" style="margin:1px 0"><label>T <span class="val" id="val-t">-7</span></label><input type="range" id="sl-t" min="-50" max="30" step="1" value="-7" style="flex:1;accent-color:#a855f7"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>R <span class="val" id="val-r">17</span></label><input type="range" id="sl-r" min="-50" max="30" step="1" value="17" style="flex:1;accent-color:#a855f7"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>B <span class="val" id="val-b">13</span></label><input type="range" id="sl-b" min="-50" max="30" step="1" value="13" style="flex:1;accent-color:#a855f7"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>L <span class="val" id="val-l">-3</span></label><input type="range" id="sl-l" min="-50" max="30" step="1" value="-3" style="flex:1;accent-color:#a855f7"></div>
+      <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Hero area</div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Basis <span class="val" id="val-basis">224</span></label><input type="range" id="sl-basis" min="160" max="520" step="4" value="224" style="flex:1;accent-color:#5ce1e6"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Stage <span class="val" id="val-stage">96</span></label><input type="range" id="sl-stage" min="60" max="220" step="2" value="96" style="flex:1;accent-color:#5ce1e6"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Height <span class="val" id="val-hero-h">196</span></label><input type="range" id="sl-hero-h" min="140" max="380" step="2" value="196" style="flex:1;accent-color:#5ce1e6"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Controls scale <span class="val" id="val-res-scale">1.0</span></label><input type="range" id="sl-res-scale" min="0.6" max="1.8" step="0.05" value="1.0" style="flex:1;accent-color:#5ce1e6"></div>
 
-  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Hero area</div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Basis <span class="val" id="val-basis">224</span></label><input type="range" id="sl-basis" min="160" max="520" step="4" value="224" style="flex:1;accent-color:#5ce1e6"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Stage <span class="val" id="val-stage">96</span></label><input type="range" id="sl-stage" min="60" max="220" step="2" value="96" style="flex:1;accent-color:#5ce1e6"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Height <span class="val" id="val-hero-h">196</span></label><input type="range" id="sl-hero-h" min="140" max="380" step="2" value="196" style="flex:1;accent-color:#5ce1e6"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Controls scale <span class="val" id="val-res-scale">1.0</span></label><input type="range" id="sl-res-scale" min="0.6" max="1.8" step="0.05" value="1.0" style="flex:1;accent-color:#5ce1e6"></div>
+      <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">BBox placement (offset)</div>
+      <div class="gpl-inline" style="margin:1px 0"><label>X <span class="val" id="val-box-x">0</span></label><input type="range" id="sl-box-x" min="-80" max="80" step="1" value="0" style="flex:1;accent-color:#a855f7"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Y <span class="val" id="val-box-y">0</span></label><input type="range" id="sl-box-y" min="-80" max="80" step="1" value="0" style="flex:1;accent-color:#a855f7"></div>
 
-  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">BBox placement (offset)</div>
-  <div class="gpl-inline" style="margin:1px 0"><label>X <span class="val" id="val-box-x">0</span></label><input type="range" id="sl-box-x" min="-80" max="80" step="1" value="0" style="flex:1;accent-color:#a855f7"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Y <span class="val" id="val-box-y">0</span></label><input type="range" id="sl-box-y" min="-80" max="80" step="1" value="0" style="flex:1;accent-color:#a855f7"></div>
+      <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Typography</div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Text scale <span class="val" id="val-text-scale">1.0</span></label><input type="range" id="sl-text-scale" min="0.7" max="1.5" step="0.05" value="1.0" style="flex:1;accent-color:#f0ebff"></div>
 
-  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Typography</div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Text scale <span class="val" id="val-text-scale">1.0</span></label><input type="range" id="sl-text-scale" min="0.7" max="1.5" step="0.05" value="1.0" style="flex:1;accent-color:#f0ebff"></div>
+      <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Overall</div>
+      <div class="gpl-inline" style="margin:1px 0"><label>Content pad <span class="val" id="val-cpad">12</span></label><input type="range" id="sl-cpad" min="2" max="28" step="1" value="12" style="flex:1;accent-color:#ffc857"></div>
+      <div class="gpl-inline" style="margin:1px 0"><label title="Does NOT resize the Comfy node — use NODE SIZE above">Content pad floor <span class="val" id="val-floor">584</span></label><input type="range" id="sl-floor" min="520" max="980" step="4" value="584" style="flex:1;accent-color:#ffc857"></div>
 
-  <div style="font:600 9px JetBrains Mono;color:#8a7fa8;margin:6px 0 3px">Overall</div>
-  <div class="gpl-inline" style="margin:1px 0"><label>Content pad <span class="val" id="val-cpad">12</span></label><input type="range" id="sl-cpad" min="2" max="28" step="1" value="12" style="flex:1;accent-color:#ffc857"></div>
-  <div class="gpl-inline" style="margin:1px 0"><label title="Does NOT resize the Comfy node — use NODE SIZE above">Content pad floor <span class="val" id="val-floor">584</span></label><input type="range" id="sl-floor" min="520" max="980" step="4" value="584" style="flex:1;accent-color:#ffc857"></div>
-
-  <div style="display:flex; gap:6px; margin-top:8px;">
-    <button type="button" class="gpl-cog-save" id="gpl-save-layout" style="flex:1;font-size:11px;padding:7px">Save Layout</button>
-    <button type="button" id="gpl-reset-layout" style="flex:0 0 auto;padding:7px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.4);color:var(--muted);cursor:pointer">Reset</button>
-  </div>
-  <div class="gpl-ext-note" style="font-size:10px;margin-top:4px">Drag to preview live. Click Save when perfect. Persisted until Reset.</div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button type="button" class="gpl-cog-save" id="gpl-save-layout" style="flex:1;font-size:11px;padding:7px">Save Layout</button>
+        <button type="button" id="gpl-reset-layout" style="flex:0 0 auto;padding:7px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.4);color:var(--muted);cursor:pointer">Reset</button>
+      </div>
+      <div class="gpl-ext-note" style="font-size:10px;margin-top:4px">Drag to preview live. Click Save when perfect. Persisted until Reset.</div>
+    </div>
+  </details>
 </div>
 
 <div class="gpl-preview" id="gpl-preview-modal">
@@ -1081,12 +1163,20 @@ app.registerExtension({
         container.style.minHeight = "0";
       }
 
-      // Early theme (shared with LoraForge)
-      const { theme: earlyT } = resolveTheme(loadSharedThemeKey());
-      Object.entries(earlyT.pf || {}).forEach(([k, v]) => container.style.setProperty(k, v));
-      if (earlyT.node) {
-        node.color = earlyT.node.color;
-        node.bgcolor = earlyT.node.bgcolor;
+      // Early look: Comfy native OR theme pack
+      const earlyNative = localStorage.getItem("pfld_comfy_native") === "1";
+      if (earlyNative) {
+        container.classList.add("gpl-comfy-native");
+        // Near-black theme shells → default purple; user palette picks kept
+        const shell = ensureComfyNativeShell(node);
+        applyComfyAccentVars(container, shell.color, shell.bgcolor);
+      } else {
+        const { theme: earlyT } = resolveTheme(loadSharedThemeKey());
+        Object.entries(earlyT.pf || {}).forEach(([k, v]) => container.style.setProperty(k, v));
+        if (earlyT.node) {
+          node.color = earlyT.node.color;
+          node.bgcolor = earlyT.node.bgcolor;
+        }
       }
     } catch (e) {}
 
@@ -1401,6 +1491,23 @@ app.registerExtension({
     fillSelect($("#gpl-scn"), "scenario");
     fillSelect($("#gpl-env"), "environment");
     fillSelect($("#gpl-music"), "music");
+    function syncMusicBgVisibility() {
+      const wrap = $("#gpl-music-bg-wrap");
+      const sel = $("#gpl-music");
+      const v = (sel?.value || "").trim();
+      const on = v && !/^none/i.test(v);
+      if (wrap) wrap.style.display = on ? "" : "none";
+      if ($("#gpl-music-bg")) $("#gpl-music-bg").checked = musicBgOn;
+    }
+    syncMusicBgVisibility();
+    $("#gpl-music")?.addEventListener("change", () => {
+      syncMusicBgVisibility();
+    });
+    $("#gpl-music-bg")?.addEventListener("change", () => {
+      musicBgOn = !!$("#gpl-music-bg")?.checked;
+      try { localStorage.setItem("pfld_music_bg", musicBgOn ? "1" : "0"); } catch { /* */ }
+      setSt(musicBgOn ? "Music → background (quiet under speech)" : "Music → in the mix (shout-over OK)");
+    });
     refreshScenarioList();
 
     function savedModel() {
@@ -1617,26 +1724,47 @@ app.registerExtension({
         scenario: $("#gpl-scn")?.value,
         camera_move: $("#gpl-cam")?.value,
         music: ($("#gpl-music")?.value || "").trim(),
+        music_bg: (() => {
+          const v = ($("#gpl-music")?.value || "").trim();
+          if (!v || /^none/i.test(v)) return false;
+          return !!$("#gpl-music-bg")?.checked || musicBgOn;
+        })(),
       };
+    }
+
+    function styleSelfCheckChip(b, on) {
+      b.classList.toggle("on", !!on);
+      b.style.cssText = "font:600 10px JetBrains Mono;padding:4px 8px;border-radius:999px;cursor:pointer;"
+        + (on
+          ? "border:1px solid rgba(255,200,87,.55);background:rgba(255,200,87,.14);color:var(--gold)"
+          : "border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:var(--muted)");
     }
 
     function paintSelfCheckChips() {
       const host = $("#gpl-self-check-chips");
       if (!host) return;
+      // Only rebuild once — toggling updates the existing button in place so the
+      // cog panel does not lose the click target and close via document handler.
+      if (host.dataset.built === "1") {
+        host.querySelectorAll("button[data-id]").forEach((b) => {
+          styleSelfCheckChip(b, selfCheckChips.includes(b.dataset.id));
+        });
+        return;
+      }
       host.innerHTML = "";
       SELF_CHECK_CHIPS.forEach((c) => {
-        const on = selfCheckChips.includes(c.id);
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "gpl-chip" + (on ? " on" : "");
         b.textContent = c.label;
         b.dataset.id = c.id;
-        b.style.cssText = "font:600 10px JetBrains Mono;padding:4px 8px;border-radius:999px;cursor:pointer;"
-          + (on
-            ? "border:1px solid rgba(255,200,87,.55);background:rgba(255,200,87,.14);color:var(--gold)"
-            : "border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:var(--muted)");
         b.title = c.label + " — toggle question";
-        b.addEventListener("click", () => {
+        styleSelfCheckChip(b, selfCheckChips.includes(c.id));
+        const keepOpen = (e) => { e.preventDefault(); e.stopPropagation(); };
+        b.addEventListener("mousedown", keepOpen);
+        b.addEventListener("pointerdown", keepOpen);
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
           if (selfCheckChips.includes(c.id)) {
             selfCheckChips = selfCheckChips.filter((x) => x !== c.id);
           } else {
@@ -1644,10 +1772,11 @@ app.registerExtension({
           }
           if (!selfCheckChips.length) selfCheckChips = SELF_CHECK_DEFAULT.slice();
           try { localStorage.setItem("pfld_self_check_chips", JSON.stringify(selfCheckChips)); } catch { /* */ }
-          paintSelfCheckChips();
+          styleSelfCheckChip(b, selfCheckChips.includes(c.id));
         });
         host.appendChild(b);
       });
+      host.dataset.built = "1";
     }
 
     async function applyRecipeHints(key) {
@@ -1806,10 +1935,26 @@ app.registerExtension({
       }
     });
 
-    $("#gpl-cog")?.addEventListener("click", (e) => { e.stopPropagation(); $("#gpl-cogpanel")?.classList.toggle("open"); probeConn(); });
+    $("#gpl-cog")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const p = $("#gpl-cogpanel");
+      const opening = !p?.classList.contains("open");
+      p?.classList.toggle("open");
+      if (opening) {
+        paintSelfCheckChips();
+        probeConn();
+      } else {
+        // Persist checklist when cog closes (also saved live on each chip click)
+        try { localStorage.setItem("pfld_self_check_chips", JSON.stringify(selfCheckChips)); } catch { /* */ }
+      }
+    });
     document.addEventListener("click", (e) => {
       const p = $("#gpl-cogpanel"), c = $("#gpl-cog");
-      if (p?.classList.contains("open") && !p.contains(e.target) && !c?.contains(e.target)) p.classList.remove("open");
+      if (!p?.classList.contains("open")) return;
+      // Stay open for any click inside the panel (chips, selects, etc.)
+      if (p.contains(e.target) || c?.contains(e.target)) return;
+      p.classList.remove("open");
+      try { localStorage.setItem("pfld_self_check_chips", JSON.stringify(selfCheckChips)); } catch { /* */ }
     });
     $("#gpl-backend-row")?.querySelectorAll(".gpl-be-btn").forEach((btn) => {
       btn.onclick = () => {
@@ -2086,13 +2231,86 @@ app.registerExtension({
 
       // Re-apply defaults visually (live)
       applyDebug(false);
-      applyTheme('default', false);
+      if (!comfyNative) applyTheme("default", false);
       scheduleLayout?.();
     });
+
+    // ── Look modes ──────────────────────────────────────────────────────────
+    // comfyNative = full stock-Comfy chrome (class-driven CSS). Not a colour pack.
+    // Theme packs only apply when native is OFF.
+    // When native is ON: Comfy's colour dots (node.color) drive button accents.
+    let comfyNative = localStorage.getItem("pfld_comfy_native") === "1";
+    let _comfyColorWatch = null;
+    let _lastComfyColorKey = "";
+
+    function syncComfyAccentsFromNode() {
+      if (!comfyNative) return;
+      const c = node.color || COMFY_DEFAULT_NODE_COLOR;
+      const bg = node.bgcolor || COMFY_DEFAULT_NODE_BG;
+      const key = `${c}|${bg}`;
+      if (key === _lastComfyColorKey) return;
+      _lastComfyColorKey = key;
+      applyComfyAccentVars(container, c, bg);
+    }
+
+    function startComfyColorWatch() {
+      stopComfyColorWatch();
+      syncComfyAccentsFromNode();
+      // Comfy palette dots set node.color with no event — light poll while native is on
+      _comfyColorWatch = setInterval(syncComfyAccentsFromNode, 250);
+    }
+    function stopComfyColorWatch() {
+      if (_comfyColorWatch) {
+        clearInterval(_comfyColorWatch);
+        _comfyColorWatch = null;
+      }
+      _lastComfyColorKey = "";
+    }
+
+    function applyComfyNative(on, save = true) {
+      comfyNative = !!on;
+      container.classList.toggle("gpl-comfy-native", comfyNative);
+      if ($("#gpl-comfy-native")) $("#gpl-comfy-native").checked = comfyNative;
+      const themeSel = $("#gpl-theme");
+      if (themeSel) {
+        themeSel.disabled = comfyNative;
+        themeSel.title = comfyNative
+          ? "Theme packs disabled while ComfyUI native look is on — use the node colour dots"
+          : "Colour theme pack";
+      }
+      if (comfyNative) {
+        // Outer shell = Comfy colour dots. Near-black theme leftovers → default
+        // purple so native mode never looks stuck grey. User palette picks kept.
+        try {
+          ensureComfyNativeShell(node);
+        } catch { /* */ }
+        _lastComfyColorKey = ""; // force accent re-apply
+        startComfyColorWatch();
+      } else {
+        stopComfyColorWatch();
+        applyTheme(loadSharedThemeKey(), false);
+      }
+      if (save) {
+        try { localStorage.setItem("pfld_comfy_native", comfyNative ? "1" : "0"); } catch { /* */ }
+        // Same-tab LoraForge listens via custom event (storage event is cross-tab only)
+        try {
+          window.dispatchEvent(new CustomEvent("pfld-comfy-native", { detail: { on: comfyNative } }));
+        } catch { /* */ }
+      }
+      try { app.graph?.setDirtyCanvas(true, true); } catch { /* */ }
+    }
 
     // Theme handling (swap colors only, layout stays identical).
     // Keys are shared with LoraForge via themes_ld.js + localStorage pfld_theme.
     function applyTheme(name, save = true) {
+      if (comfyNative) {
+        // Still remember the pick for when user leaves native mode
+        const { id } = resolveTheme(name);
+        const sel = $("#gpl-theme");
+        if (sel) sel.value = id;
+        if (save) saveSharedThemeKey(id);
+        return;
+      }
       const { id, theme } = resolveTheme(name);
       const pf = theme.pf || THEMES.default;
       Object.entries(pf).forEach(([k, v]) => {
@@ -2114,9 +2332,37 @@ app.registerExtension({
     $("#gpl-theme")?.addEventListener("change", (e) => {
       applyTheme(e.target.value, true);
     });
+    $("#gpl-comfy-native")?.addEventListener("change", () => {
+      applyComfyNative(!!$("#gpl-comfy-native")?.checked, true);
+      setSt(comfyNative
+        ? "Look → ComfyUI native (stock dark widgets)"
+        : "Look → PromptForge themed chrome");
+    });
+    // Advanced layout accordion — collapsed by default; remember if user opens it
+    {
+      const adv = $("#gpl-adv-layout");
+      if (adv) {
+        try {
+          if (localStorage.getItem("pfld_adv_layout_open") === "1") adv.open = true;
+        } catch { /* */ }
+        adv.addEventListener("toggle", () => {
+          try {
+            localStorage.setItem("pfld_adv_layout_open", adv.open ? "1" : "0");
+          } catch { /* */ }
+        });
+      }
+    }
     // If LoraForge cycles the shared theme in another node, pick it up
     window.addEventListener("storage", (e) => {
       if (e.key === "pfld_theme" && e.newValue) applyTheme(e.newValue, false);
+      if (e.key === "pfld_comfy_native") {
+        applyComfyNative(e.newValue === "1", false);
+      }
+    });
+    window.addEventListener("pfld-comfy-native", (e) => {
+      const on = !!(e?.detail?.on);
+      if (on === comfyNative) return;
+      applyComfyNative(on, false);
     });
 
     // Load saved sliders on startup (after DOM + a tick)
@@ -2157,8 +2403,9 @@ app.registerExtension({
       // Apply whatever is in the sliders now (live, no extra save)
       applyDebug(false);
 
-      // Load shared theme (same key as LoraForge)
-      applyTheme(loadSharedThemeKey(), false);
+      // Load look mode + theme pack
+      applyComfyNative(localStorage.getItem("pfld_comfy_native") === "1", false);
+      if (!comfyNative) applyTheme(loadSharedThemeKey(), false);
     }, 160);
 
     function bindChips(id, onPick) {
@@ -2276,6 +2523,9 @@ app.registerExtension({
       $("#gpl-keep-warm").addEventListener("change", () => {
         keepWarm = !!$("#gpl-keep-warm").checked;
         localStorage.setItem("pfld_keep_warm", keepWarm ? "1" : "0");
+        setSt(keepWarm
+          ? "LLM stays warm after Generate — freed on Comfy Queue/Run"
+          : "LLM free after each Generate (old)");
         syncLive();
       });
     }
@@ -2326,7 +2576,7 @@ app.registerExtension({
         localStorage.setItem("pfld_detailer", detailerOn ? "1" : "0");
       });
     }
-    // Seed: header strip (primary) + cog mirror
+    // Seed: header strip only (cog duplicate removed)
     paintSeedUI();
     container.querySelectorAll(".gpl-seed-mode-btn").forEach((b) => {
       b.addEventListener("click", () => {
@@ -2335,7 +2585,7 @@ app.registerExtension({
       });
     });
     const onSeedEdit = () => {
-      const n = parseInt($("#gpl-seed-hd")?.value ?? $("#gpl-seed")?.value, 10);
+      const n = parseInt($("#gpl-seed-hd")?.value, 10);
       if (Number.isFinite(n) && n >= 0) {
         lastSeed = n >>> 0;
         try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
@@ -2346,23 +2596,19 @@ app.registerExtension({
     $("#gpl-seed-hd")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); onSeedEdit(); }
     });
-    $("#gpl-seed")?.addEventListener("change", () => {
-      const n = parseInt($("#gpl-seed")?.value, 10);
-      if (Number.isFinite(n) && n >= 0) {
-        lastSeed = n >>> 0;
-        try { localStorage.setItem("pfld_seed", String(lastSeed)); } catch { /* */ }
-        paintSeedUI();
-      }
-    });
     const rollClick = () => {
       const s = rollSeed();
       setSt(`Seed → ${s}`);
     };
     $("#gpl-seed-roll-hd")?.addEventListener("click", rollClick);
-    $("#gpl-seed-roll")?.addEventListener("click", rollClick);
     $("#gpl-kill-llm")?.addEventListener("click", async () => {
       try {
-        await fetch("/pfld/kill", { method: "POST" });
+        // Cog button: full free (unload Comfy models too)
+        await fetch("/pfld/kill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ full: true }),
+        });
         setSt("LLM killed · VRAM flushed");
       } catch (e) {
         setSt("Kill failed: " + e.message);
@@ -2784,6 +3030,93 @@ app.registerExtension({
       scheduleLayout();
     }
 
+    /**
+     * Intent box only — independent height grip (localStorage).
+     * LTX Script fills leftover space and tracks node resize (no own grip).
+     */
+    function wireIntentResize(ta, storageKey, opts = {}) {
+      if (!ta || ta.dataset.pfldResize === "1") return;
+      const minH = opts.minH ?? 64;
+      const maxH = opts.maxH ?? 600;
+      const defH = opts.defH ?? 110;
+      let h = defH;
+      try {
+        const saved = parseInt(localStorage.getItem(storageKey), 10);
+        if (Number.isFinite(saved) && saved >= minH) h = Math.min(maxH, saved);
+      } catch { /* */ }
+
+      const wrap = document.createElement("div");
+      wrap.className = "gpl-ta-wrap gpl-ta-wrap-intent";
+      ta.parentNode.insertBefore(wrap, ta);
+      wrap.appendChild(ta);
+
+      const grip = document.createElement("div");
+      grip.className = "gpl-ta-grip";
+      grip.title = "Drag to resize Intent height";
+      grip.setAttribute("data-tip", "Drag up/down to resize Intent only — LTX Script follows the node size");
+      grip.setAttribute("aria-label", "Resize Intent box");
+      wrap.appendChild(grip);
+
+      const applyH = (px, save) => {
+        const v = Math.max(minH, Math.min(maxH, Math.round(px)));
+        ta.style.height = `${v}px`;
+        ta.style.minHeight = `${v}px`;
+        ta.style.maxHeight = "none";
+        ta.style.flex = "none";
+        if (save) {
+          try { localStorage.setItem(storageKey, String(v)); } catch { /* */ }
+        }
+        return v;
+      };
+      applyH(h, false);
+      ta.dataset.pfldResize = "1";
+
+      let drag = null;
+      const onMove = (ev) => {
+        if (!drag) return;
+        ev.preventDefault();
+        const y = ev.clientY ?? ev.touches?.[0]?.clientY;
+        if (y == null) return;
+        applyH(drag.startH + (y - drag.startY), false);
+      };
+      const onUp = () => {
+        if (!drag) return;
+        wrap.classList.remove("dragging");
+        const finalH = parseInt(ta.style.height, 10) || defH;
+        applyH(finalH, true);
+        drag = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      grip.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const startH = ta.offsetHeight || defH;
+        drag = { startY: ev.clientY, startH };
+        wrap.classList.add("dragging");
+        try { grip.setPointerCapture(ev.pointerId); } catch { /* */ }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onUp);
+      });
+      grip.addEventListener("dblclick", (ev) => {
+        ev.preventDefault();
+        applyH(defH, true);
+      });
+    }
+    // Intent: free grip. Script: no grip — height from node (CSS flex fill).
+    wireIntentResize($("#gpl-intent"), "pfld_intent_h", { minH: 72, maxH: 600, defH: 110 });
+    // Clear any leftover independent height from older builds
+    const outTa = $("#gpl-out");
+    if (outTa) {
+      outTa.style.height = "";
+      outTa.style.minHeight = "";
+      outTa.style.maxHeight = "";
+      outTa.style.flex = "";
+      try { localStorage.removeItem("pfld_out_h"); } catch { /* */ }
+    }
+
     $("#gpl-intent")?.addEventListener("input", () => sw("user_intent", $("#gpl-intent").value.trim()));
     // LoRA trigger keywords (separate from free intent)
     try {
@@ -2885,6 +3218,23 @@ app.registerExtension({
       return t;
     }
 
+    function isRerollMode() {
+      const intent = ($("#gpl-intent")?.value || "").trim();
+      const hasScript = !!(draftPrompt || $("#gpl-out")?.value || gw("confirmed_prompt")?.value || "").trim();
+      return !!(hasScript && intent && lastGenIntent && intent === lastGenIntent);
+    }
+    function paintGenBtn() {
+      const btn = $("#gpl-gen");
+      if (!btn || generating) return;
+      if (isRerollMode()) {
+        btn.textContent = "Re-roll";
+        btn.setAttribute("data-tip", "Same intent — new seed, fresh take. Model stays warm.");
+      } else {
+        btn.textContent = "Generate";
+        btn.setAttribute("data-tip", "Generate a new LTX script from all controls + intent. Same intent again → Re-roll (new seed).");
+      }
+    }
+
     async function compose(opts = {}) {
       const refine = !!opts.refine;
       if (generating) { abortCtrl?.abort(); return; }
@@ -2895,13 +3245,18 @@ app.registerExtension({
       if (refine && !prior) { setSt("Refine needs an existing script — Generate first."); return; }
       if (videoMode === "i2v" && !hasImage() && !refine) { setSt("I2V needs an image."); return; }
 
+      const reroll = !refine && isRerollMode();
       generating = true;
       const btn = $("#gpl-gen");
       const rbtn = $("#gpl-refine");
       btn.textContent = "Stop";
       btn.classList.add("stop");
       if (rbtn) rbtn.disabled = true;
-      setSt(refine ? "Preparing refine…" : (videoMode === "i2v" ? "Preparing image…" : "Starting…"));
+      setSt(refine
+        ? "Preparing refine…"
+        : reroll
+          ? "Re-roll (new seed)…"
+          : (videoMode === "i2v" ? "Preparing image…" : "Starting…"));
       if ($("#gpl-st")) $("#gpl-st").classList.add("working");
 
       syncModels();
@@ -2928,21 +3283,41 @@ app.registerExtension({
       if (!refine) $("#gpl-out").value = "";
       let text = refine ? "" : "";
 
+      // After Queue/Run the LLM is dead and LTX may hold VRAM. keep_warm must NOT
+      // skip the pre-flush in that case — force_flush + server-side "LLM down → flush".
+      let videoTookVram = false;
+      try { videoTookVram = !!window.__pfldVideoTookVram; } catch { /* */ }
+
       const body = {
         ...buildComposeBody(),
         refine,
         prior_prompt: refine ? prior : "",
         user_intent: intent,
+        // Leave LLM loaded after THIS gen (re-roll / warm session)
+        keep_warm: reroll ? true : keepWarm,
+        // After Queue/Run: LTX holds VRAM — force Comfy unload before LLM boot.
+        // Server also auto-flushes whenever the LLM health check is down.
+        force_flush: !!videoTookVram,
         temperature: parseFloat($("#gpl-temp")?.value) || (refine ? 0.4 : 0.55),
       };
+      // Re-roll always forces a NEW seed (even Fixed mode) — after buildComposeBody so it wins
+      if (reroll) body.seed = rollSeed();
 
       try {
-        setSt(refine ? "Revising…" : "Connecting…");
+        setSt(
+          refine
+            ? "Revising…"
+            : reroll
+              ? (videoTookVram
+                ? `Re-roll · free LTX VRAM · seed ${body.seed}…`
+                : `Re-rolling seed ${body.seed}…`)
+              : (videoTookVram ? "Freeing video VRAM · starting LLM…" : "Connecting…"),
+        );
         if (videoMode === "i2v" && !refine) {
           body.image_b64 = await visionB64ForCompose();
           if (!body.image_b64) {
             generating = false;
-            btn.textContent = "Generate";
+            paintGenBtn();
             btn.classList.remove("stop");
             if (rbtn) rbtn.disabled = false;
             if ($("#gpl-st")) $("#gpl-st").classList.remove("working");
@@ -3042,18 +3417,21 @@ app.registerExtension({
         $("#gpl-out").value = draftPrompt;
         const committed = commitOutput(draftPrompt);
         pushHistory(intent, committed);
+        if (!refine && committed) lastGenIntent = intent;
+        // LLM is back in VRAM — next re-roll can skip LTX flush until Queue again
+        try { window.__pfldVideoTookVram = false; } catch { /* */ }
         syncLive();
-        const tag = refine ? "refined" : "forged";
+        const tag = refine ? "refined" : (reroll ? "re-rolled" : "forged");
         const scTag = selfCheckOn ? (selfCheckMode === "report" ? " · qa-report" : " · qa") : "";
         setSt(committed
-          ? `✦ ${committed.length} chars ${tag} → pack · seed ${lastSeed}${keepWarm ? " · warm" : ""}${detailerOn ? " · det" : ""}${repairOn ? "" : " · raw"}${scTag}`
+          ? `✦ ${committed.length} chars ${tag} → pack · seed ${lastSeed}${keepWarm || reroll ? " · warm" : ""}${detailerOn ? " · det" : ""}${repairOn ? "" : " · raw"}${scTag}`
           : "Empty.");
       } catch (e) {
         if (e.name !== "AbortError") setSt("Error: " + e.message);
         else setSt("Stopped.");
       } finally {
         generating = false;
-        btn.textContent = "Generate";
+        paintGenBtn();
         btn.classList.remove("stop");
         if (rbtn) rbtn.disabled = false;
         if ($("#gpl-st")) $("#gpl-st").classList.remove("working");
@@ -3063,6 +3441,9 @@ app.registerExtension({
 
     $("#gpl-gen").onclick = () => compose({ refine: false });
     $("#gpl-refine")?.addEventListener("click", () => compose({ refine: true }));
+    $("#gpl-intent")?.addEventListener("input", () => paintGenBtn());
+    $("#gpl-out")?.addEventListener("input", () => paintGenBtn());
+    paintGenBtn();
 
     function restoreSession() {
       const cp = gw("confirmed_prompt")?.value;
