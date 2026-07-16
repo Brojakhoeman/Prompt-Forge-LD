@@ -83,7 +83,7 @@ function ensureStyles() {
     link.href = "/extensions/PromptForgeLD/js/prompt_forge.css";
   }
   // Bust cache: native shell vs inner accents
-  link.href += (link.href.includes("?") ? "&" : "?") + "v=comfynative5";
+  link.href += (link.href.includes("?") ? "&" : "?") + "v=voice-stack1";
   document.head.appendChild(link);
 }
 
@@ -461,7 +461,26 @@ app.registerExtension({
     // Do NOT hardcode near-black here — that made native accents stay grey.
 
     const gw = (n) => node.widgets?.find((w) => w.name === n);
-    const sw = (n, v) => { const w = gw(n); if (w) w.value = v; };
+    /** Write a hidden widget AND keep Comfy's widgets_values / graph in sync.
+     *  Bare `w.value = x` can leave Queue on a stale pack/image until something
+     *  else (e.g. re-clicking a carousel card) rewrites the widget. */
+    const sw = (n, v) => {
+      const w = gw(n);
+      if (!w) return;
+      w.value = v;
+      try {
+        const idx = node.widgets?.indexOf(w);
+        if (idx >= 0) {
+          if (!Array.isArray(node.widgets_values)) node.widgets_values = [];
+          node.widgets_values[idx] = v;
+        }
+      } catch { /* */ }
+      try { w.callback?.(v); } catch { /* */ }
+      try {
+        node.setDirtyCanvas?.(true, true);
+        app.graph?.setDirtyCanvas?.(true, true);
+      } catch { /* */ }
+    };
     sw("image_b64", "");
 
     let imgPreviewUrl = null, imgW = 0, imgH = 0, imgFilename = "";
@@ -509,6 +528,7 @@ app.registerExtension({
       { id: "gravure_voice", label: "Gravure voice" },
       { id: "music_plant", label: "Music plant" },
       { id: "dance_tease", label: "Dance / tease" },
+      { id: "sing_vocal", label: "Singing" },
       { id: "pacing", label: "Pacing / density" },
     ];
     const SELF_CHECK_DEFAULT = ["intent_beats", "talk_floor", "body_unit", "sections", "no_meta"];
@@ -724,19 +744,19 @@ app.registerExtension({
         <label class="gpl-check gpl-check-inline" data-tip="Carry wardrobe/pose state into the next Generate (continuity)"><input type="checkbox" id="gpl-carry" checked> Carry</label>
         <button type="button" id="gpl-carry-clear" class="gpl-icon-btn" data-tip="Clear stored continuity (fresh wardrobe/pose next Generate)" style="margin-left:2px;font-size:10px;padding:2px 6px" title="Clear continuity">✕</button>
       </div>
-      <!-- Lead + accents together — same cast voice identity cluster -->
+      <!-- Lead + accents — single compact row -->
       <div class="gpl-fields gpl-fields-voice-3">
         <div class="gpl-field"><label data-tip="Who the primary subject is (she/he/they) — drives identity + accent look seeds">Lead</label>
           <select id="gpl-lead" data-tip="Lead gender for identity lines and accent profiles">
-            <option value="auto">Auto (intent)</option>
-            <option value="female">Female lead</option>
-            <option value="male">Male lead</option>
-            <option value="neutral">Neutral / they</option>
+            <option value="auto">Auto</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="neutral">Neutral</option>
           </select>
         </div>
-        <div class="gpl-field"><label data-tip="Lead speaker accent. T2V also seeds matching look (Scottish freckles ≠ Korean face).">Accent · Lead</label>
+        <div class="gpl-field"><label data-tip="Lead speaker accent. T2V also seeds matching look (Scottish freckles ≠ Korean face).">Accent</label>
           <select id="gpl-accent" data-tip="Accent lock for lead: grammar + voice line + look seed (T2V)">
-            <option value="auto">Auto (from intent)</option>
+            <option value="auto">Auto</option>
             <option value="off">Off</option>
             <optgroup label="UK / Ireland">
               <option value="cockney">Cockney (London)</option>
@@ -793,9 +813,9 @@ app.registerExtension({
             </optgroup>
           </select>
         </div>
-        <div class="gpl-field"><label data-tip="Second speaker's accent (pair scenes). Stays distinct from lead.">Accent · Partner</label>
-          <select id="gpl-accent-partner" data-tip="Partner accent lock — never blend mid-line with lead">
-            <option value="off">Off / same as lead</option>
+        <div class="gpl-field"><label data-tip="Second speaker's accent (pair scenes). Stays distinct from lead. Off = same as lead.">Partner</label>
+          <select id="gpl-accent-partner" data-tip="Partner accent lock — never blend mid-line with lead. Off = same as lead.">
+            <option value="off">Off</option>
             <option value="auto">Auto</option>
             <optgroup label="UK / Ireland">
               <option value="cockney">Cockney</option>
@@ -3213,6 +3233,11 @@ app.registerExtension({
     function commitOutput(text) {
       const t = formatScriptLayout(text || "");
       sw("confirmed_prompt", t);
+      // Re-assert image path with the script so Queue can't pick new text + old image
+      if (imgFilename && imgFilename !== NO_IMAGE_NAME) {
+        sw("image_filename", imgFilename);
+        sw("image_b64", "");
+      }
       if ($("#gpl-out") && t) $("#gpl-out").value = t;
       draftPrompt = t;
       return t;
@@ -3262,7 +3287,19 @@ app.registerExtension({
       syncModels();
       await saveConn();
       sw("user_intent", intent);
+      // image_b64 never serializes to Queue (stripped). Always re-push the
+      // carousel selection so I2V pack doesn't use a stale/empty filename until
+      // the user re-clicks a card.
       sw("image_b64", "");
+      if (imgFilename && imgFilename !== NO_IMAGE_NAME) {
+        sw("image_filename", imgFilename);
+      } else if (imgPreviewUrl && String(imgPreviewUrl).startsWith("data:")) {
+        // Browse fallback still in memory only — keep b64 for Python if present
+        sw("image_b64", imgPreviewUrl);
+        sw("image_filename", "");
+      } else {
+        sw("image_filename", "");
+      }
       sw("scenario", $("#gpl-scn")?.value);
       sw("environment", $("#gpl-env")?.value);
       sw("camera_move", $("#gpl-cam")?.value);
