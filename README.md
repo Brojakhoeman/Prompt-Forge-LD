@@ -1,4 +1,23 @@
+<img width="378" height="654" alt="Screenshot 2026-07-16 130142" src="https://github.com/user-attachments/assets/f6672947-3622-46a4-b4fc-31b0c7543055" />
+
+
+
+https://github.com/user-attachments/assets/dc759e9c-1222-43fe-9e90-e0beb33c3752
+
+
+
+https://github.com/user-attachments/assets/965a6daf-898a-423b-b144-b999ba18f760
+
+<img width="395" height="155" alt="image" src="https://github.com/user-attachments/assets/1827982c-6212-4ad5-8065-e430f84e21a4" />
+
+
+
+
+
+
 # PromptForge LD
+
+i'm not very good at "selling" things. so i'd love for you to try it but it does alot more then i list. 
 
 **A serious shot-writer for LTX Video in ComfyUI.**
 
