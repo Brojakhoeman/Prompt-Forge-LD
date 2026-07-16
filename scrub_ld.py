@@ -566,6 +566,22 @@ _AFTERCARE_RE = re.compile(
 )
 
 
+def _cap_and_says(m):
+    """Cap an 'and says: "..."' line to its first two words.
+
+    NOTE: must not be inlined back into an f-string. The previous version put a
+    backslash-escaped regex inside an f-string expression, which is PEP 701
+    syntax and a hard SyntaxError on Python 3.10/3.11 -- and since
+    __init__ -> node -> api -> generation_core -> brain_ld -> scrub_ld, that
+    took the whole node down on import for anyone not on 3.12+.
+    """
+    words = re.findall(r"[A-Za-z']+", m.group(4))
+    if len(words) <= 2:
+        return m.group(0)
+    short = " ".join(words[:2]).lower()
+    return '{}{}{}: "{}"'.format(m.group(1), m.group(2), m.group(3) or "", short)
+
+
 def _scrub_oral_pull_off_wordiness(s: str) -> str:
     """Across an oral sequence, long on-screen pull-off speech → ≤2 words.
 
@@ -618,12 +634,7 @@ def _scrub_oral_pull_off_wordiness(s: str) -> str:
             part = re.sub(
                 r"\b(and\s+)(says|murmurs|whispers|gasps)\s*"
                 r"(\([^)]*\))?\s*:\s*\"([^\"]+)\"",
-                lambda m: (
-                    m.group(0)
-                    if len(re.findall(r"[A-Za-z']+", m.group(4))) <= 2
-                    else f'{m.group(1)}{m.group(2)}{m.group(3) or ""}: '
-                         f'"{" ".join(re.findall(r"[A-Za-z\']+", m.group(4))[:2]).lower()}"'
-                ),
+                _cap_and_says,
                 part,
                 flags=re.I,
             )
@@ -701,7 +712,7 @@ def _fix_quote_terminal_punct(s: str) -> str:
 
 
 def _scrub_speech_verb_glitches(s: str) -> str:
-    """Fix double speech-verb artifacts: 'saying says (warm)' from bare-bracket inject."""
+    """Fix double speech-verb artifacts: 'saying says (warm)' / 'sings says' from bare-bracket inject."""
     s = re.sub(
         r"\b(saying|sayin'?)(\s+)says\b",
         r"\1",
@@ -712,6 +723,19 @@ def _scrub_speech_verb_glitches(s: str) -> str:
         r"\b(murmuring|whispering|asking|adding|growling|moaning|gasping|"
         r"snarling|breathing)(\s+)(?:says|murmurs|whispers|asks|adds)\b",
         r"\1",
+        s,
+        flags=re.I,
+    )
+    # sings/croons + says glitch (Gemma + bare-bracket inject)
+    s = re.sub(
+        r"\b(sings?(?:\s+along)?|croons?)\s+says\b",
+        r"\1",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(sings?(?:\s+along)?|croons?)\s+says\s*(\([^)]*\))\s*:",
+        r"\1 \2:",
         s,
         flags=re.I,
     )
@@ -729,11 +753,13 @@ def _fix_bare_emotion_brackets(s: str) -> str:
     """Bare (soft): \"hi\" → says (soft): \"hi\" — only when no speech verb already present.
 
     Must not turn 'saying (warm):' into 'saying says (warm):'.
+    Must not turn 'sings (soft):' into 'sings says (soft):'.
     """
     speech_verb_tail = re.compile(
         r"\b(?:says|saying|sayin'?|murmurs|murmuring|whispers|whispering|"
         r"asks|asking|adds|adding|growls|growling|moans|moaning|"
-        r"gasps|gasping|snarls|snarling|breathes|breathing)\s*$",
+        r"gasps|gasping|snarls|snarling|breathes|breathing|"
+        r"sings?(?:\s+along)?|croons?|hums?)\s*$",
         re.I,
     )
 
@@ -1160,6 +1186,35 @@ def scrub(text: str, *, mode: str = "i2v", pov: bool = False,
 
     s = _scrub_star_adlibs(s)
     s = _apply_verb_map(s)
+    # Model glitch: "sings says" / "croons says" double verb
+    s = re.sub(
+        r"\b(sings?|croons?|sings\s+along)\s+says\b",
+        r"\1",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(sings?|croons?)\s+says\s*(\([^)]*\))\s*:",
+        r"\1 \2:",
+        s,
+        flags=re.I,
+    )
+    # Karaoke stock inside quotes → force scene-y rewrites (conservative)
+    _stock_in_q = [
+        (r'"[^"]*this song[, ]+so good[^"]*"', '"this booth light — stay."'),
+        (r'"[^"]*this song is so good[^"]*"', '"this neon — stay with me."'),
+        (r'"[^"]*music[, ]+(?:feels|feel) so right[^"]*"', '"the kick under my heels."'),
+        (r'"[^"]*just one more song[^"]*"', '"one more line — then we go."'),
+        (r'"[^"]*just one more dance[^"]*"', '"one more step — then cool."'),
+        (r'"[^"]*one more (?:song|track|dance)\.?[^"]*"', '"one more hook — hold."'),
+        (r'"[^"]*dancing through the night[^"]*"', '"floor under my boots."'),
+        (r'"[^"]*feel the light[^"]*"', '"neon on my sleeve."'),
+        (r'"[^"]*Neon light[,.]?\s*so bright\.?[^"]*"', '"neon on the booth rail."'),
+        (r'"[^"]*This neon light\.?[^"]*"', '"steel rail cold under my hand."'),
+        (r'"[^"]*This booth, my place\.?[^"]*"', '"velvet booth — my corner."'),
+    ]
+    for rx, rep in _stock_in_q:
+        s = re.sub(rx, rep, s, flags=re.I)
     s = _VIBE.sub("", s)
     # Only strip micro-details / felt-sensation prose outside of spoken quotes
     parts = re.split(r'("[^"]*")', s)

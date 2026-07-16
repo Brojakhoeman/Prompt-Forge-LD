@@ -13,7 +13,6 @@ Build with context from the compose path so the negative ENHANCES the shot.
 
 from __future__ import annotations
 
-import re
 
 # ── Always on: never want these burned into the frame / track ───────────────
 ALWAYS = [

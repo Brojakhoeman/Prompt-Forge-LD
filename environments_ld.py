@@ -220,7 +220,8 @@ ENVIRONMENT_PRESETS = {
         "a busker somewhere, the compressed city sound that has nowhere to go"),
 
     # ── NIGHTLIFE / ADULT ─────────────────────────────────────────────────────
-    "💃 Strip club — main floor": (
+    # Was silent-dup of "main floor" — restored as its own variant (mirrored horseshoe)
+    "💃 Strip club — mirrored horseshoe": (
         "strip club interior at full operation, a raised centre stage with a brass pole "
         "catching coloured light, mirrored wall behind the stage doubling everything, "
         "leather booths arranged in a horseshoe around the stage, VIP rope section off to one side, "
@@ -234,7 +235,8 @@ ENVIRONMENT_PRESETS = {
         "bass-heavy RnB or trap at medium volume, ice in glasses, "
         "low conversation from the booths, heels on the stage surface"),
 
-    "🔒 Private booth — POV": (
+    # Was silent-dup of private booth POV — restored (classic seated amber)
+    "🔒 Private booth — amber downlight POV": (
         "POV from a seated position in a strip club private booth, "
         "camera locked at seated eye height looking slightly upward, "
         "black leather seat visible at the lower edge of frame, "
@@ -679,7 +681,8 @@ ENVIRONMENT_PRESETS = {
 
 
     # ── STRIP CLUB / INTIMATE DANCE ───────────────────────────────────────────
-    "💃 Strip club — main floor": (
+    # Was silent-dup of "main floor" — restored as multi-stage amber/pink variant
+    "💃 Strip club — multi-stage amber": (
         "main floor of an upscale strip club, multiple stages with poles, "
         "circular runway lighting casting warm amber and pink down onto the performance areas, "
         "booths in deep shadow around the perimeter, other patrons visible as silhouettes, "
@@ -1159,10 +1162,13 @@ _POV_ENVS = {
     "🪩 Club private booth — VIP",
     "💆 Massage table — face down",
     "🔒 Private booth — POV",
+    "🔒 Private booth — amber downlight POV",
     "🪑 Strip club — private booth",
     "🌙 Strip club — VIP room",
     "🎪 Burlesque venue — seated table",
     "💃 Strip club — main floor",
+    "💃 Strip club — mirrored horseshoe",
+    "💃 Strip club — multi-stage amber",
 }
 _WTF_ENVS = {
     "✈️ Skydive — open door at altitude",

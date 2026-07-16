@@ -13,8 +13,6 @@ Outputs a compact system block: active dance paths + tease gestures + music temp
 from __future__ import annotations
 
 import random
-import re
-from typing import Iterable
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ACTIVATION
@@ -1297,6 +1295,8 @@ def dance_block(
     music_key: str = "",
     music_text: str = "",
     music_background: bool = False,
+    accent_mode: str = "auto",
+    accent_partner: str = "off",
     seed: int = 0,
     max_paths: int = 3,
     max_teases: int = 5,
@@ -1304,6 +1304,7 @@ def dance_block(
     """
     System inject for dance/tease. Empty if neither family activates.
     Music only adds tempo colour when dance (not tease-only) is active.
+    Accent lock adds full regional body-language paths (3 per accent).
     """
     if not is_active(intent, scenario):
         return ""
@@ -1314,25 +1315,66 @@ def dance_block(
     # Seed can promote one extra tip from freestyle bank when only freestyle
     rng = random.Random(int(seed or 0) ^ 0xDA5CE)
     if paths == ["freestyle"]:
-        # sprinkle one spicy standing tip via seed without claiming dirty dance
         extra = rng.choice(["hip_roll", "body_roll", "sexy_standing"])
         if extra not in paths:
             paths = ["freestyle", extra]
 
+    # When accent is locked, freestyle is FALLBACK only — regional paths win
+    try:
+        from .accent_dance_ld import resolve_dance_accent_key, accent_dance_block
+    except ImportError:
+        from accent_dance_ld import resolve_dance_accent_key, accent_dance_block
+    _ak = resolve_dance_accent_key(accent_mode or "auto", intent)
+    if _ak and "freestyle" in paths and len(paths) > 1:
+        paths = [p for p in paths if p != "freestyle"] + ["freestyle"]
+    elif _ak and paths == ["freestyle"]:
+        # Keep freestyle as last resort note only; regional block will lead
+        paths = ["freestyle"]
+
     lines = [
-        "\n━━ DANCE / TEASE MOTION (INTENT-ACTIVATED — NOT BLOAT) ━━",
-        "Only active because intent/scenario named dance and/or tease motion.",
-        "'dirty' alone or 'dirty talk' does NOT mean dirty dance — need 'dirty dance' (etc.).",
-        "Music preset alone does NOT force dance; if music is set AND dance is on, tempo follows the track.",
-        "CANON still wins: mechanism verbs, one main move per section, head+torso together, no snaps/whips.",
-        "Film the body: name hip direction, weight shift, hand path, contact surface (chair/wall/partner).",
+        "\n━━ DANCE / TEASE (active — craft tools) ━━",
+        "Intent asked for dance and/or tease. Pick concrete filmable moves; invent path through the clip.",
+        "'dirty' alone ≠ dirty dance (need 'dirty dance' etc.). Music alone does not force dance.",
+        "Quiet background score only softens soundtrack prose — body can still dance.",
+        "Film: hip direction, weight, hands, contact. One main move per section. Head+torso together.",
+        "When regional paths are listed, lead with those — not the same generic sway for every accent.",
     ]
 
+    # Regional accent × dance FIRST (priority) — all 3 paths per accent
+    _ad = ""
+    if wants_dance(intent, scenario) or paths:
+        _ad = accent_dance_block(
+            intent,
+            accent_mode=accent_mode or "auto",
+            accent_partner=accent_partner or "off",
+            seed=int(seed or 0),
+        )
+        if _ad:
+            lines.append(_ad)
+            lines.append(
+                "\nHARD: land AT LEAST ONE named REGIONAL path above in the clip "
+                "(not only generic freestyle hip sway). Prefer regional over freestyle when both appear."
+            )
+            lines.append(
+                "BANNED as the ONLY dance description when a REGIONAL path is active:\n"
+                "  'hips swaying gently' / 'shifts weight from one foot to the other' / "
+                "'side-to-side weight shift' / 'sways to the rhythm' alone.\n"
+                "Those may appear AFTER a named regional mechanism (idol point, dembow circle, "
+                "march-pulse plant, ceilidh skip-step, kalinka squat pulse, waist wine, etc.).\n"
+                "GOOD: 'She plants and hits a sharp arm point on the beat — freeze half a count.'\n"
+                "BAD: 'She shifts her weight, hips swaying gently to the music.' as the whole dance."
+            )
+
+    # Generic keyword paths — freestyle listed last if present
     if paths:
-        lines.append("\nACTIVE DANCE PATHS:")
-        for k in paths:
+        ordered = [p for p in paths if p != "freestyle"] + (
+            ["freestyle"] if "freestyle" in paths else []
+        )
+        lines.append("\nKEYWORD DANCE PATHS (secondary if regional is active):")
+        for k in ordered:
             meta = DANCE_PATHS.get(k) or {}
-            lines.append(f"【{meta.get('name', k)}】")
+            tag = " [FALLBACK ONLY]" if k == "freestyle" and _ak else ""
+            lines.append(f"【{meta.get('name', k)}{tag}】")
             lines.append(f"  {meta.get('doctrine', '')}")
 
     if teases:
@@ -1354,12 +1396,18 @@ def dance_block(
 
     lines.append(
         "\nDANCE LAYOUT: section = setup stance → one dance or tease move → optional short line "
-        "if mouth free. Do not stack five moves in one paragraph.\n"
+        "if mouth free (or sung line if SINGING is also on). Do not stack five moves in one paragraph.\n"
     )
     return "\n".join(lines)
 
 
-def dance_remember_line(intent: str = "", scenario: str = "") -> str:
+def dance_remember_line(
+    intent: str = "",
+    scenario: str = "",
+    *,
+    accent_mode: str = "auto",
+    accent_partner: str = "off",
+) -> str:
     if not is_active(intent, scenario):
         return ""
     bits = []
@@ -1371,4 +1419,14 @@ def dance_remember_line(intent: str = "", scenario: str = "") -> str:
         bits.append("NOT dirty-dance unless phrase says so")
     if wants_tease_motion(intent, scenario):
         bits.append("tease gestures mechanism")
+    try:
+        from .accent_dance_ld import accent_dance_remember_line
+    except ImportError:
+        from accent_dance_ld import accent_dance_remember_line
+    _ar = accent_dance_remember_line(
+        intent, accent_mode=accent_mode or "auto", accent_partner=accent_partner or "off",
+    )
+    if _ar:
+        # fold into one remember bullet family
+        bits.append(_ar.replace("• DANCE×ACCENT: ", "regional "))
     return "• DANCE/TEASE: " + "; ".join(bits) if bits else ""

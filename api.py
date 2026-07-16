@@ -237,12 +237,35 @@ def register_routes():
             hint = "Server up — load a model in LM Studio (+ Load Model), then Generate."
         elif ok and not llm.is_managed() and models:
             hint = f"In memory: {', '.join(models)}"
+
+        # Context check. ctx=16384 only applies to the llama-server WE launch;
+        # connect-only backends use whatever the user configured, and a system
+        # prompt of ~6.5k-10k tokens silently truncates in a small window.
+        ctx = llm.active_ctx() if ok else None
+        ctx_probed = llm.probe_ctx() if ok else None
+        ctx_warn = ""
+        if ok:
+            try:
+                from .generation_core import assemble_preview
+            except ImportError:
+                from generation_core import assemble_preview
+            try:
+                probe = assemble_preview({"intent": "probe", "mode": "i2v"})
+                ctx_warn = llm.ctx_warning(int(probe.get("system_chars") or 0))
+            except Exception:
+                ctx_warn = ""
+        if ctx_warn:
+            hint = f"⚠️ {ctx_warn}" + (f" · {hint}" if hint else "")
+
         return web.json_response({
             "ok": ok,
             "backend": backend,
             "server_url": url,
             "model": llm.conn_model(),
             "models": models,
+            "ctx": ctx,
+            "ctx_probed": bool(ctx_probed),
+            "ctx_warning": ctx_warn,
             "hint": hint,
         })
 
@@ -275,6 +298,9 @@ def register_routes():
                 data = data.split(",", 1)[1]
             if not data:
                 return web.json_response({"ok": False, "error": "no image data"}, status=400)
+            # ~24 MB decoded ceiling — local-only but blocks fat-finger paste storms
+            if len(data) > 32 * 1024 * 1024:
+                return web.json_response({"ok": False, "error": "image too large"}, status=413)
             if not is_image_filename(name):
                 name += ".png"
             raw = base64.b64decode(data)

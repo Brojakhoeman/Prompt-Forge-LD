@@ -11,6 +11,8 @@ Rules of the road (Grok bar):
     model sprinkles them naturally; user does not need to type "ja?" / "seen?" into Intent.
   • Native words are CONTEXT SLIPS + AD-LIBS (agreement, urge, surprise, intimate) —
     not the same particle on every line ("ja?" spam is a failure).
+  • SHIBBOLETHS (accent_shibboleths.json): English target words that show L1 colour
+    when spoken correctly — plant 1–3 as props/stakes. NEVER phonetic garble (no "ze"/"wery").
   • Never reuse the same ad-lib/slip or the same example line twice in one clip.
   • First section: voice line. First spoken line: optional varied opener.
   • Most lines are accented ENGLISH; ad-libs are seasoning, not wallpaper.
@@ -23,7 +25,65 @@ UI keys (force) map to ACCENTS keys via resolve_accent_key / aliases.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ENGLISH SHIBBOLETHS (L1-hard words — correct spelling, plant as props)
+#  Loaded from accent_shibboleths.json next to this module.
+#  Keys match ACCENTS keys; unused keys are ignored.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SHIB_PATH = Path(__file__).resolve().parent / "accent_shibboleths.json"
+_SHIBBOLETHS: dict[str, list[str]] = {}
+
+
+def _load_shibboleths() -> dict[str, list[str]]:
+    global _SHIBBOLETHS
+    if _SHIBBOLETHS:
+        return _SHIBBOLETHS
+    out: dict[str, list[str]] = {}
+    if _SHIB_PATH.is_file():
+        try:
+            raw = json.loads(_SHIB_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for k, words in raw.items():
+                    key = str(k).strip().lower()
+                    if not key or not isinstance(words, list):
+                        continue
+                    cleaned = []
+                    seen = set()
+                    for w in words:
+                        s = re.sub(r"\s+", " ", str(w or "").strip())
+                        if not s or len(s) > 40:
+                            continue
+                        kl = s.lower()
+                        if kl in seen:
+                            continue
+                        seen.add(kl)
+                        cleaned.append(s)
+                    if cleaned:
+                        out[key] = cleaned
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            out = {}
+    _SHIBBOLETHS = out
+    return _SHIBBOLETHS
+
+
+def get_shibboleths(key: str, seed: int = 0, n: int = 6) -> list[str]:
+    """Seeded subset of English shibboleth words for this accent (max n)."""
+    bank = _load_shibboleths().get((key or "").strip().lower()) or []
+    if not bank:
+        return []
+    import random
+    n = max(3, min(int(n or 6), 8, len(bank)))
+    stable = sum(ord(c) for c in (key or "x")) & 0xFFFF
+    rng = random.Random(int(seed or 0) ^ stable ^ 0x51B5)
+    pool = list(bank)
+    rng.shuffle(pool)
+    return pool[:n]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ACCENT BANK
@@ -2422,21 +2482,10 @@ _HEAT_SLIPS = {
         "hot": ["fuckin'", "dirty gyul", "take it"],
         "filthy": ["fuckin' slut", "dirty whore", "take all of it"],
     },
-    "nigerian_english": {
-        "hot": ["fuckin'", "dirty thing", "take am"],
-        "filthy": ["fuckin' slut", "dirty whore", "take all of it", "abeg… more"],
-    },
+    # nigerian / swahili / south_african merged below (were duplicated later — both palettes kept)
     "ghanaian_english": {
         "hot": ["fuckin'", "dirty thing", "take it"],
         "filthy": ["fuckin' slut", "dirty whore", "take all of it"],
-    },
-    "south_african_english": {
-        "hot": ["fuckin'", "dirty thing", "take it"],
-        "filthy": ["fuckin' slut", "filthy whore", "take it liefie"],
-    },
-    "swahili": {
-        "hot": ["fuckin'", "more", "njoo"],
-        "filthy": ["fuckin' slut", "take it", "zaidi… now"],
     },
     "filipino_english": {
         "hot": ["fuckin'", "grabe", "take it"],
@@ -2502,9 +2551,13 @@ _HEAT_SLIPS = {
         "hot": ["saali", "aur", "le le", "chhod"],
         "filthy": ["randi", "saali", "le pura", "chod"],
     },
+    # Merged heat palettes (earlier + later definitions — nothing discarded)
     "nigerian_english": {
-        "hot": ["fuckin'", "ashawo", "more", "take am"],
-        "filthy": ["ashawo", "dirty girl", "take am all", "no stop"],
+        "hot": ["fuckin'", "dirty thing", "take am", "ashawo", "more"],
+        "filthy": [
+            "fuckin' slut", "dirty whore", "take all of it", "abeg… more",
+            "ashawo", "dirty girl", "take am all", "no stop",
+        ],
     },
     "arabic": {
         "hot": ["يا شرموطة", "أكثر", "خديه"],
@@ -2539,12 +2592,18 @@ _HEAT_SLIPS = {
         "filthy": ["שרמוטה", "זונה", "קחי הכל", "תזייני"],
     },
     "swahili": {
-        "hot": ["zaidi", "chukua", "sana", "malaya"],
-        "filthy": ["malaya", "chukua yote", "piga", "uchafu"],
+        "hot": ["fuckin'", "more", "njoo", "zaidi", "chukua", "sana", "malaya"],
+        "filthy": [
+            "fuckin' slut", "take it", "zaidi… now",
+            "malaya", "chukua yote", "piga", "uchafu",
+        ],
     },
     "south_african_english": {
-        "hot": ["fuckin'", "naai", "take it", "poes"],
-        "filthy": ["fuckin' whore", "vuil slet", "take it all", "naai harder"],
+        "hot": ["fuckin'", "dirty thing", "take it", "naai", "poes"],
+        "filthy": [
+            "fuckin' slut", "filthy whore", "take it liefie",
+            "fuckin' whore", "vuil slet", "take it all", "naai harder",
+        ],
     },
 }
 
@@ -2916,7 +2975,7 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
                       explicit: bool, energy: int, examples_n: int = 8,
                       lead_gender="auto", pov=False, pov_gender="female",
                       role="lead", seed: int = 0, scene_blob: str = "",
-                      mode: str = "t2v") -> list:
+                      mode: str = "t2v", emit_heat: bool = True) -> list:
     """Build lock lines for a single speaker key."""
     s = ACCENTS[key]
     nm = s["name"]
@@ -2980,7 +3039,7 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
         L += [
             f"   GOOD: \"{identity_open} …\" then action.",
             f"   BAD:  plain \"a woman…\" with no {adj} tag, or dropping intent body facts for a seed look",
-            f"   BAD:  voice line only, open still ignores petite/small breasts/age the user wrote",
+            "   BAD:  voice line only, open still ignores petite/small breasts/age the user wrote",
             "   Intent body/age/wardrobe keywords MUST land in this open when present.",
             "   Auto age 19–28 only when intent named no age.",
         ]
@@ -3047,11 +3106,21 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
                 "OPTIONAL FIRST-LINE OPENERS (at most once): "
                 + " · ".join(f'\"{o}\"' for o in op_show)
             )
+    # English L1-hard words — plant as props/stakes (correct spelling; shows accent colour)
+    shibs = get_shibboleths(key, seed=seed, n=6)
+    if shibs:
+        L.append(
+            f"ENGLISH SHIBBOLETHS for {nm.upper()} (L1-hard words — plant 1–3 naturally "
+            "as props/stakes inside accented English lines this clip; CORRECT spelling only; "
+            "NEVER comedy phonetic like ze/zis/wery; each word at most ONCE):"
+        )
+        L.append("   " + " · ".join(f'"{w}"' for w in shibs))
     L.append("FAILURE MODES for this speaker:")
     L += [
         "   • Fluent unaccented English + one token foreign word at the end",
         "   • Same particle spam every line (ja? ja? / aye aye / mon mon / seen? seen?)",
         "   • Phonetic misspellings of English",
+        "   • Dumping the whole shibboleth list in one line — plant 1–3 as real props only",
         "   • Mouth heat band ignored (too soft or too filthy for the setting)",
         "   • Burning the whole ad-lib list in two lines — season, don't wallpaper",
         "   • Ignoring the language ad-lib bank and inventing American slang instead",
@@ -3061,7 +3130,10 @@ def _one_speaker_lock(key: str, *, role_label: str, voice_line: str,
     L.append("VOICE SHAPE SAMPLES (rewrite to THIS scene — do not paste all):")
     for ex in examples[:examples_n]:
         L.append(f"   • \"{ex}\"")
-    L.append(_heat_block(key, energy, explicit))
+    # Heat is global (one mouth-heat band for the whole clip), so the dual path
+    # emits it once after both locks instead of repeating it verbatim per speaker.
+    if emit_heat:
+        L.append(_heat_block(key, energy, explicit))
     L.append(
         f"CHECK ({role_label}): accented English, varied rare slips from palette, "
         f"heat={tier}/{heat_label(energy)}, no repeated particle."
@@ -3140,9 +3212,9 @@ def accent_block(intent, explicit=False, force_key=None,
             "Every spoken line in this clip uses this accent unless a per-speaker lock says otherwise.",
             f"Also valid setup line: \"{dual}\"",
             "GROK ACCENT RULE — first body section (after any I2V/POV open):",
-            f"  (1) IDENTITY + LOOK: nationality/region in WHO they are"
+            "  (1) IDENTITY + LOOK: nationality/region in WHO they are"
             + (f" — seed: \"{identity_open}…\"" if mode != "i2v" else f" — \"a {adj} woman/man…\""),
-            f"  (2) VOICE LINE: almost verbatim the setup sentence below.",
+            "  (2) VOICE LINE: almost verbatim the setup sentence below.",
             "Without both, the model hears generic English even if one line mentions an accent later.",
             "T2V: phenotype must match the accent (a Scottish woman does not look like a Korean woman).",
             "I2V: start image wins on face — never invent a conflicting ethnicity.",
@@ -3178,14 +3250,63 @@ def accent_block(intent, explicit=False, force_key=None,
         ]
         return "\n".join(L)
 
-    # Dual-speaker path
-    # Resolve who is who
-    lead_key = key or pkey
-    partner = pkey or key
-    if not key:
-        # only partner forced — treat as single
+    # Dual-speaker path — resolve who is who BEFORE choosing header text
+    partner = pkey or ""
+    if not key and partner:
+        # only partner forced — collapse to single-accent path (no dual header lie)
         key = partner
         partner = ""
+        s = ACCENTS[key]
+        nm = s["name"]
+        acoustic = s["acoustic"]
+        primary, dual = _voice_line_templates(
+            nm, acoustic, lead_gender=lead_gender, pov=pov, pov_gender=pov_gender,
+        )
+        adj = identity_label(key)
+        look = pick_character_profile(key, lead_gender=lead_gender, role="lead", seed=seed)
+        identity_open = format_identity_opener(
+            key, look, lead_gender=lead_gender, role="lead",
+            intent=scene_blob, seed=seed, mode=mode,
+        )
+        L = [
+            f"\n━━ ACCENT LOCK — {nm.upper()} (NON-NEGOTIABLE) ━━",
+            "Every spoken line in this clip uses this accent unless a per-speaker lock says otherwise.",
+            f"Also valid setup line: \"{dual}\"",
+            "GROK ACCENT RULE — first body section (after any I2V/POV open):",
+            "  (1) IDENTITY + LOOK: nationality/region in WHO they are"
+            + (f" — seed: \"{identity_open}…\"" if mode != "i2v" else f" — \"a {adj} woman/man…\""),
+            "  (2) VOICE LINE: almost verbatim the setup sentence below.",
+            "Without both, the model hears generic English even if one line mentions an accent later.",
+            "Then every spoken line keeps the grammar/rhythm — not fluent unaccented English + one foreign word.",
+            "Slips are SEASONING from this clip's seed palette — never the same particle on every line.",
+        ]
+        L += _one_speaker_lock(
+            key,
+            role_label="LEAD / PRIMARY VOICE",
+            voice_line=primary,
+            explicit=explicit,
+            energy=energy,
+            examples_n=12,
+            lead_gender=lead_gender,
+            pov=pov,
+            pov_gender=pov_gender,
+            role="lead",
+            seed=seed,
+            scene_blob=scene_blob,
+            mode=mode,
+        )
+        L += [
+            "",
+            "FINAL CHECK: first body section names a "
+            f"{adj} woman/man (not plain \"a woman\")"
+            + ("; look matches the accent seed" if mode != "i2v" else "; look honours start image")
+            + "; voice line present; "
+            "speech is accented English; slips varied and rare; "
+            f"dialect heat matches mouth heat ({heat_tier(energy)}); no repeated particle; "
+            "no phonetic comedy spelling of English words.",
+            "",
+        ]
+        return "\n".join(L)
 
     s1 = ACCENTS[key]
     primary1, _ = _voice_line_templates(
@@ -3235,6 +3356,7 @@ def accent_block(intent, explicit=False, force_key=None,
             voice_line=p_line, explicit=explicit, energy=energy, examples_n=10,
             lead_gender=lead_gender, pov=pov, pov_gender=pov_gender, role="partner",
             seed=(int(seed or 0) + 17), scene_blob=scene_blob, mode=mode,
+            emit_heat=False,  # heat is global — stated once below, not per speaker
         )
         adj1, adj2 = identity_label(key), identity_label(partner)
         L += [

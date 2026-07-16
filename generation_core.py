@@ -276,6 +276,7 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
             seed=seed,
             music_key=music_key or "",
             music_background=music_bg,
+            video_style_key=video_style or "",
             _duration_is_write=True,
         )
 
@@ -295,7 +296,10 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
             "model": model_id,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": brain.max_tokens(write_dur, mode, pov, talkative, _duration_is_write=True),
+            "max_tokens": brain.max_tokens(
+                write_dur, mode, pov, talkative, _duration_is_write=True,
+                system_chars=len(system), ctx=llm.active_ctx(),
+            ),
             "stream": True,
             "seed": seed,
         }
@@ -455,6 +459,7 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                     lora_triggers=body.get("lora_triggers", "") or "",
                     music_key=music_key or "",
                     music_background=music_bg,
+                    video_style_key=video_style or "",
                     _duration_is_write=True,
                 )
                 densify_payload = {
@@ -463,6 +468,7 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                     "temperature": min(0.7, temperature + 0.12),
                     "max_tokens": brain.max_tokens(
                         write_dur, mode, pov, talkative=True, _duration_is_write=True,
+                        system_chars=len(system), ctx=llm.active_ctx(),
                     ),
                     "stream": True,
                     # Offset so densify rewrites, but stays reproducible from the same UI seed
@@ -603,7 +609,10 @@ async def generate_prompt(body: dict, *, on_event=None) -> dict:
                 # Cap completion — report is short; fix needs full script room
                 sc_max = 900 if sc_mode == "report" else min(
                     4500,
-                    brain.max_tokens(write_dur, mode, pov, talkative, _duration_is_write=True),
+                    brain.max_tokens(
+                        write_dur, mode, pov, talkative, _duration_is_write=True,
+                        system_chars=len(system), ctx=llm.active_ctx(),
+                    ),
                 )
                 sc_text = await asyncio.to_thread(
                     llm.chat,
@@ -806,6 +815,7 @@ def assemble_preview(body: dict) -> dict:
             seed=prev_seed,
             music_key=body.get("music", "") or "",
             music_background=bool(body.get("music_bg", body.get("music_background", False))),
+            video_style_key=video_style or "",
             _duration_is_write=True,
         )
     return {
@@ -815,7 +825,13 @@ def assemble_preview(body: dict) -> dict:
         "timeline": brain.timeline(write_dur),
         "system_chars": len(system),
         "user_chars": len(user_text),
-        "max_tokens": brain.max_tokens(write_dur, mode, pov, talkative, _duration_is_write=True),
+        "max_tokens": brain.max_tokens(
+            write_dur, mode, pov, talkative, _duration_is_write=True,
+            system_chars=len(system), ctx=llm.active_ctx(),
+        ),
+        "budget": brain.budget_report(
+            system, write_dur, mode, pov, talkative, ctx=llm.active_ctx(),
+        ),
         "explicit": explicit,
         "cast": cast,
         "user_duration_s": user_duration_s,

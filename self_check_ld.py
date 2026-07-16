@@ -87,6 +87,14 @@ CHECK_CATALOG: dict[str, dict] = {
             "If music is also on: at least some motion lands with the pulse without turning every line into dance spam?"
         ),
     },
+    "sing_vocal": {
+        "label": "Singing",
+        "q": (
+            "Intent asks for singing/song/karaoke/vocals: does the script use sings/croons/sings along "
+            "(or clear hums) with short complete lyric phrases — not only says(…) talk lines? "
+            "Mouth free for lyrics; no fake phonetic spelling; not one token sing then all dialogue?"
+        ),
+    },
 }
 
 # UI default chips when user hasn't customized
@@ -430,6 +438,16 @@ def auto_chips(
             dance_active = None
     if dance_active and dance_active(intent or "", scenario or ""):
         add("dance_tease")
+    # Singing / vocal performance from intent keywords
+    try:
+        from .sing_ld import wants_sing as sing_wants
+    except ImportError:
+        try:
+            from sing_ld import wants_sing as sing_wants
+        except ImportError:
+            sing_wants = None
+    if sing_wants and sing_wants(intent or "", scenario or "", video_style=video_style or ""):
+        add("sing_vocal")
 
     # Pacing: auto when we know duration, or intent is dense with beats
     n_beats = len(extract_intent_beats(intent or ""))

@@ -10,7 +10,7 @@ from .camera_ld import KEYS as CAM_KEYS
 from .music_ld import MUSIC_KEYS
 from .styles_ld import STYLE_KEYS
 from .negatives import build as build_negative
-from .intensity_ld import LEVELS, LEVEL_LABELS, coerce_level, level_to_energy
+from .intensity_ld import LEVELS, LEVEL_LABELS, coerce_level
 from .pack_ld import PFLD_PACK, make_pack, unpack
 from .tensors import b64_to_tensor, load_path, make_black, resize
 

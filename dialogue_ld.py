@@ -961,7 +961,8 @@ def _adlibs_for(reg_key, seed_rng, n=4):
     seen, out = set(), []
     for a in pool:
         if a not in seen:
-            seen.add(a); out.append(a)
+            seen.add(a)
+            out.append(a)
         if len(out) >= n:
             break
     return out
@@ -1292,17 +1293,48 @@ def detect_acts(intent, scenario_block=""):
     return hits
 
 
+# Partner cues that VETO solo framing. Regex, matched against a blob whose
+# reflexives are masked (see _is_solo) so "with her" cannot fire inside
+# "with herself" and "watches her" cannot fire inside "watches herself".
+# Deliberately excludes bare pronouns (she/he/her/his) — a solo scene is
+# described with exactly those — and excludes anatomy ("his cock"), which is
+# ambiguous without knowing the subject's gender: "he strokes his cock, alone"
+# is solo, "she sucks his cock" has no solo cue and fails the final check anyway.
+_PARTNER_CUES = (
+    r"\bpartner",
+    r"\beach other\b",
+    r"\bone another\b",
+    r"\bwith (?:him|her|them)\b",
+    r"\bwatch(?:es|ing)? (?:him|her|them)\b",
+    r"\b(?:while|whilst|as|and) (?:he|she|they) (?:watch|look|stare)",
+    r"\b(?:boyfriend|girlfriend|husband|wife)\b",
+)
+
+_REFLEXIVE_RE = re.compile(
+    r"\b(?:herself|himself|themselves|itself|myself|yourself|oneself)\b"
+)
+
+
 def _is_solo(intent, scenario_block, act_keys):
+    """True only when a lone actor is present.
+
+    Order matters. A partner cue VETOES solo framing even when a solo act fired,
+    because detect_acts() matches "touches herself" -> solo_play on a two-person
+    line like "she touches herself while he watches". solo_play's register is
+    SELF-directed, so letting it win there makes her talk to herself with a
+    partner in frame.
+
+    Reflexives are masked before cue matching so that self-directed phrasing
+    ("plays with herself", "watches herself") cannot trip a partner cue.
+    """
+    blob = f"{intent or ''} {scenario_block or ''}".lower()
+    masked = _REFLEXIVE_RE.sub(" \u2205 ", blob)
+    if any(re.search(p, masked) for p in _PARTNER_CUES):
+        return False
     if "solo_play" in act_keys:
         return True
-    blob = f"{intent or ''} {scenario_block or ''}".lower()
-    # a lone actor with no partner words leans solo
-    partner_words = ("he ", "him", "his", "she ", "her ", "they", "partner",
-                     "each other", "him.", "her.")
     solo_words = ("alone", "by herself", "by himself", "solo", "herself", "himself")
-    if any(_trigger_hit(w, blob) for w in solo_words) and not any(w in blob for w in ("his cock", "his mouth", "him.")):
-        return True
-    return False
+    return any(_trigger_hit(w, blob) for w in solo_words)
 
 
 def _act_role_pref(pov, pov_gender):
@@ -1370,9 +1402,10 @@ def render_act_block(intent, scenario_block, *, pov=False, pov_gender="female",
             rng.shuffle(picks)
             picks = picks[:lines_per_role]
             out.append(f"\n  ▸ {label}:")
-            out.append("    lines: " + "  ".join(f"\"{l}\"" for l in picks))
+            out.append("    lines: " + "  ".join(f'"{line}"' for line in picks))
             if adlibs:
-                a = list(adlibs); rng.shuffle(a)
+                a = list(adlibs)
+                rng.shuffle(a)
                 out.append("    sounds: " + "  ".join(a[:4]))
 
     for key in acts:
@@ -1544,7 +1577,8 @@ def dialogue_block(*, tier="standard", intent="", scenario_block="",
         seen2, spread = set(), []
         for a in pool:
             if a not in seen2:
-                seen2.add(a); spread.append(a)
+                seen2.add(a)
+                spread.append(a)
         spread = spread[:10]
         out.append("\n【Ad-libs】 non-verbal vocal beats — weave these as PLAIN PROSE "
                    "into the action line (never *stars*, never markdown). Example: "

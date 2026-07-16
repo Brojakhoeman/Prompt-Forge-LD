@@ -20,6 +20,7 @@ Public API (all module-level — shared state, no per-brain copies):
 import os
 import time
 import subprocess
+import json as _json
 import urllib.request
 
 # Defaults — env overrides first, then common Windows paths.
@@ -189,6 +190,76 @@ def is_healthy(server_url=DEFAULT_URL, backend="llama.cpp (managed)"):
         return False
 
 
+MANAGED_CTX = 16384      # what we launch llama-server with
+_FALLBACK_CTX = 8192     # assumed when a connect-only backend won't tell us
+_ctx_cache = {}
+
+
+def probe_ctx(server_url=None, backend=None):
+    """Best-effort real context window of the backend we're pointed at.
+
+    This matters: ctx=16384 only applies to the llama-server WE launch. On
+    LM Studio / Ollama the window is whatever the user configured, and Ollama's
+    OpenAI-compatible path has historically defaulted small (2048) unless
+    num_ctx is set. A ~6.5k-token system prompt into a 2048 window is silently
+    truncated -- no error, just a bad script. Returns None if unknown.
+    """
+    url = (server_url or conn_url()).rstrip("/")
+    bk = backend or conn_backend()
+    if is_managed(bk):
+        return MANAGED_CTX
+    key = (url, bk)
+    if key in _ctx_cache:
+        return _ctx_cache[key]
+    val = None
+    try:
+        if bk == OLLAMA:
+            body = _json.dumps({"model": conn_model()}).encode()
+            req = urllib.request.Request(url + "/api/show", data=body,
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as r:
+                info = _json.loads(r.read().decode("utf-8", "replace"))
+            mi = info.get("model_info") or {}
+            for k, v in mi.items():
+                if k.endswith(".context_length") and isinstance(v, int):
+                    val = v
+                    break
+        else:
+            # llama.cpp /props works for LM Studio builds that expose it
+            req = urllib.request.Request(url + "/props")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                info = _json.loads(r.read().decode("utf-8", "replace"))
+            val = (info.get("default_generation_settings") or {}).get("n_ctx") or info.get("n_ctx")
+    except Exception:
+        val = None
+    if isinstance(val, int) and val > 0:
+        _ctx_cache[key] = val
+    return val
+
+
+def active_ctx(server_url=None, backend=None):
+    """Context to budget against. Never returns None -- callers need a number."""
+    return probe_ctx(server_url, backend) or (
+        MANAGED_CTX if is_managed(backend or conn_backend()) else _FALLBACK_CTX
+    )
+
+
+def ctx_warning(system_chars, server_url=None, backend=None, reserve=512):
+    """Human-readable warning when the prompt won't fit. '' when fine."""
+    ctx = active_ctx(server_url, backend)
+    need = (int(system_chars) // 4) + reserve
+    probed = probe_ctx(server_url, backend)
+    if need >= ctx:
+        return (f"Prompt ~{need:,} tokens vs context {ctx:,}"
+                + ("" if probed else " (assumed — server did not report)")
+                + " — raise the server's context size or the script rules get cut.")
+    if need > ctx * 0.75:
+        return (f"Prompt ~{need:,} tokens is using most of the {ctx:,} context"
+                + ("" if probed else " (assumed)")
+                + " — little room for the script.")
+    return ""
+
+
 def ensure(model_path, mmproj_path=None, server_url=DEFAULT_URL, exe=LLAMA_EXE,
            ctx=16384, backend="llama.cpp (managed)"):
     """Make sure a llama-server is up with the right vision capability. Boots one
@@ -288,7 +359,6 @@ def kill(backend="llama.cpp (managed)"):
 
 
 # ── shared chat + eviction (backend-agnostic) ─────────────────────────────────
-import json as _json
 
 # How long (seconds) a connect-only backend keeps the model resident after our
 # last request. Short = auto-frees VRAM between prompts. Managed ignores this.

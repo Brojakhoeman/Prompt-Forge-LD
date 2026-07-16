@@ -1,21 +1,23 @@
 """
-PromptForgeLD — LTX 2.3 prompt brain (overhaul).
+PromptForgeLD — LTX 2.3 prompt brain.
 
-Design law: DO LESS in the *frame*, DO MORE for the *voice*.
-  • One doctrine (THE CANON)
-  • Tight POV CONTRACT (solo / pair aware)
-  • Action sections, not clocks
-  • Dialogue budgets stay GENEROUS — talkers talk
-  • Cast + continuity as short injects, not new religions
-  • Post-scrub enforces CANON without bloating the system prompt
+System prompt architecture (how a generate is built):
+
+  1) RUN CARD     — what is ON for this shot (mode, dialogue, music, dance, sing, accent…)
+  2) CRAFT ROOM   — what the LLM invents freely (props, lyric wording, path choice, wit)
+  3) CORE         — CANON + layout + cast/POV (always; once)
+  4) CHARACTER    — WHO: lead, body/age traits, look seed, continuity (before they act)
+  5) SCENE        — WHERE: env / scenario / camera / style / music
+  6) PERFORMANCE  — dance / sing if intent activated them (character already known)
+  7) VOICE        — how they sound: intensity, full accent speech lock, dialogue samples
+  8) MODE EXTRAS  — garment / detailer / jump when relevant
+
+Features are NOT removed — they are ordered so the model sees *what matters*
+before *optional colour*. Post-scrub stays as a thin seatbelt, not the product.
 
 Public entry:
     build_system(**opts) -> str
-    build_user(intent, duration_s, mode, **opts) -> str
-    build_messages(...)
-    max_tokens(duration_s, mode, pov, talkative=False)
-    clean(text) / finalize(text, mode, intent, pov=False)
-    timeline(duration_s)  # empty — sections are self-paced
+    build_user(...) / build_messages(...) / max_tokens / clean / finalize / timeline
 """
 
 from __future__ import annotations
@@ -75,8 +77,8 @@ The model renders EXACTLY what you write and nothing you don't. Unwritten = abse
 6. ONE MAIN ACTION PER MOMENT, present tense: describe what the body does (steps, lowers hips, rotates torso, sits), not abstract contact labels. Prefer neutral spatial language.
 7. ANATOMY IS DIRECT when relevant — plain correct terms, never clinical, never coy.
 8. TRUST THE MODEL. Do not stack micro-details (knuckle whitening, hair strands, thumb rims, "small smile") — they clutter the frame and cause failures. Name the real motion; the model fills the rest.
-9. GROK BAR — SPECIFICITY + WIT. Every section needs one concrete fact from THIS scene (a prop, a place detail, a stake, a garment piece). Generic flirt / generic anger with no prop is a failure. Dialogue must advance the situation (leave now, one more rep, missed the bus, end the call) — not recycled empty lines. Prefer the surprising concrete detail over the obvious one (the cracked phone glass, the sticky table edge, the bus number, the wrong-size wrench) — that is what reads as "Grok", not vibes.
-10. NO PHRASE LOOPS. Never repeat the same clause, tag, or 3+ word chunk across spoken lines in one clip (e.g. "the whole time" six times is a failure). Each line must add new information. Vary vocabulary.
+9. GROK BAR — SPECIFICITY + WIT. Every section needs one concrete fact from THIS scene (a prop, a place detail, a stake, a garment piece). Generic flirt / generic anger with no prop is a failure. Dialogue must advance the situation (leave now, one more rep, missed the bus, end the call) — not recycled empty lines. Prefer the surprising concrete detail over the obvious one (the cracked phone glass, the sticky table edge, the bus number, the wrong-size wrench) — that is what reads as "Grok", not vibes. When singing: lyrics need scene facts too — never interchangeable karaoke mush that could fit any accent/club.
+10. NO PHRASE LOOPS. Never repeat the same clause, tag, or 3+ word chunk across spoken/sung lines in one clip (e.g. "the whole time" six times is a failure). Each line must add new information. Vary vocabulary. Also ban cross-run karaoke stock: "this song so good", "just one more song/dance", "music feels so right", "dancing through the night".
 11. REGISTER DISCIPLINE. Pleading / begging / desperate tone ONLY if the intent asks for it. Default talk is natural, specific, and grounded — not needy spam.
 12. NO META SPEECH. Characters never talk about the script, the cut, the camera, the prompt, "this scene", "after the cut", "in this video", or "as the clip continues". They only talk from inside the world.
 13. DENSITY OVER FLUFF. Prefer one sharp new fact per section over two empty sentences. When the mouth is free and the tier is talkative, speak — under-writing is worse than a slightly long line. EXCEPTION: oral occupation (below) — density never stacks dialogue into a busy mouth.
@@ -90,11 +92,26 @@ The model renders EXACTLY what you write and nothing you don't. Unwritten = abse
 
 _I2V_ANCHOR = "Use the provided start image exactly as the first frame."
 
+_SPEECH_FORM_LAW = (
+    "\n━━ SPEECH FORM (FIRST-PASS — NO SCRUB NEEDED) ━━\n"
+    "Quoted dialogue uses ONLY these speech verbs:\n"
+    "  says | sings | croons | sings along | whispers | murmurs | asks\n"
+    "Correct: She says (soft): \"the rail is cold\"\n"
+    "Correct: She sings (warm): \"neon booth, hold me\"\n"
+    "BANNED as speech carriers with quotes: grunts, growls, screams, bellows, snarls, "
+    "shouts, yells, roars, gasps, pants, moans, sighs, laughs, chuckles — those may be "
+    "PROSE sounds without quotes (\"he grunts\" / \"she gasps\") but NEVER "
+    "grunts (low): \"full sentence\".\n"
+    "If the line has quotation marks, the verb must be from the allowlist above.\n"
+)
+
 _CAST_HINTS = {
     "solo": (
         "\n━━ CAST: SOLO ━━\n"
         "One person only on screen. No partner pronouns inventing a second body. "
         "All action, breath and speech belong to this single subject.\n"
+        "I2V EXCEPTION: if the start image clearly shows TWO+ people, honour the still "
+        "(vision overrides this solo rail) — tag everyone visible; do not erase bodies.\n"
     ),
     "pair": (
         "\n━━ CAST: PAIR ━━\n"
@@ -161,9 +178,14 @@ def _vision_honesty_extra(mode: str) -> str:
         "species, age presentation, or a second person not in the frame will ruin the video.\n"
         "Rules:\n"
         "• Name ONLY colours, materials, pose, wardrobe, and props you can justify from the pixels.\n"
+        "• OPEN must name the main visible garment COLOUR + MATERIAL once "
+        "(e.g. purple velvet blazer, light knit sweater, navy zip jacket) — do not swap families "
+        "(shirt ≠ blazer; hoodie ≠ coat).\n"
         "• If unsure, stay conservative — omit the detail rather than guess.\n"
         "• Face not visible → do not invent eyes meeting camera or a pretty face turn.\n"
         "• Hands already in contact → tighten/drag; never re-place from nowhere.\n"
+        "• CAST COUNT: bodies visible in the still win over UI cast=solo/pair. "
+        "If two people are in frame, write two; never invent a third not in the still.\n"
         "• Animation / illustrated stills → keep that medium (see ANIMATION LOCK if present).\n"
     )
 
@@ -256,8 +278,14 @@ _SECTION_FORMAT = (
     "If DIALOGUE is SILENT: never use quotation marks or says/murmurs lines — motion + breath/foley only.\n"
     "If DIALOGUE allows speech, spoken lines look like:\n"
     "  She leans in, breath catching, and murmurs (soft, warm): \"slow down\"\n"
+    "If INTENT asks for singing, vocal lines may use sings / croons / sings along (not only says):\n"
+    "  She sings (soft): \"don't leave me here\"\n"
+    "  He sings along (warm): \"one more night\"\n"
+    "SPEECH VERB ALLOWLIST with quotes: says / sings / croons / sings along / whispers / murmurs / asks only.\n"
+    "WRONG: grunts (low): \"don't stop\"  |  growls (rough): \"come here\"  |  gasps (intense): \"full sentence\"\n"
+    "OK prose without quotes: he grunts. she gasps. she laughs once.\n"
     "The bracket steers VOICE only. Body emotion = visible mechanics. Occupied mouth = breath/moan only.\n"
-    "NO *asterisk* stage directions — prose only (\"she hums soft\" is non-word sound OK; not a quote).\n"
+    "NO *asterisk* stage directions — prose only.\n"
     "\n"
     "CORRECT LAYOUT EXAMPLE (I2V, speech allowed):\n"
     "Use the provided start image exactly as the first frame.\n\n"
@@ -273,7 +301,9 @@ _SECTION_FORMAT_SILENT = (
     "━━ OUTPUT FORMAT — ACTION SECTIONS (SILENT — NO SPEECH) ━━\n"
     "LAYOUT (MANDATORY):\n"
     "• ONE action per section · 1–3 short sentences · BLANK LINE between sections.\n"
-    "• NO timestamps, NO markdown, NO quotation marks, NO says/murmurs/whispers lines.\n"
+    "• NO timestamps, NO markdown, NO quotation marks, NO says/murmurs/whispers/sings lines.\n"
+    "• HARD BAN on silent: hum, humming, whistle, whistling, sing, song, melody, lyric, "
+    "wordless tune, musical mouth — breath and foley only (cloth, water, steps, ambient).\n"
     "Structure: motion first (mechanism), optional breath/foley/ambient sound as prose only.\n"
     "\n"
     "CORRECT SILENT EXAMPLE (I2V):\n"
@@ -283,7 +313,7 @@ _SECTION_FORMAT_SILENT = (
     "She slides the dress off one shoulder. Fabric whispers against her skin.\n\n"
     "She lets the dress fall to her waist. Soft breath only.\n"
     "\n"
-    "WRONG: any quoted dialogue or 'she says (soft): \"…\"'.\n"
+    "WRONG: any quoted dialogue, 'she says (soft): \"…\"', or 'soft humming escapes her lips'.\n"
 )
 
 
@@ -291,9 +321,11 @@ def _i2v_open():
     return (
         "After the mandatory first line above, the FIRST section must restate who is in the frame in concrete physical detail — build, colour, "
         "hair, wardrobe and how it sits, and the EXACT current pose from the image. Describe ONLY what the provided start image shows; invent nothing. "
+        "Name the main garment COLOUR + MATERIAL once (velvet, denim, knit, silk, leather…) — match the pixels, do not swap garment families. "
         "If a face is not visible in the image, do NOT invent them looking at camera or turning to show a face — keep the facing the frame gives you. "
         "If hands are already in contact, they tighten or drag; they are never re-placed from nowhere. "
-        "After that, move forward section by section — do not restage the still, do not restate the anchor again.\n"
+        "If intent asks to adjust/tug/hem/strap/collar clothing: the FIRST action beat after open must manipulate a garment already visible — "
+        "not a random prop. After that, move forward section by section — do not restage the still, do not restate the anchor again.\n"
     )
 
 
@@ -316,14 +348,15 @@ def _dialogue_budget(tier, duration_s):
     if t in ("none", "silent", "off"):
         return (
             "\n━━ DIALOGUE: SILENT — HARD BAN ON SPEECH (NON-NEGOTIABLE) ━━\n"
-            "This clip is SILENT. ZERO quoted dialogue. ZERO spoken words. ZERO says/murmurs/whispers lines.\n"
+            "This clip is SILENT. ZERO quoted dialogue. ZERO spoken words. ZERO says/murmurs/whispers/sings lines.\n"
             "BANNED: any text in quotation marks, any 'she says (…): \"…\"', any native-language lines, "
-            "any accent-sample speech, any voice-over monologue.\n"
-            "ALLOWED ONLY: breath, sigh, soft non-word mouth sound, cloth/foley, ambient sound described as sound — "
-            "never as readable speech.\n"
+            "any accent-sample speech, any voice-over monologue, any hummed/whistled/sung melody "
+            "(no 'soft humming', no whistle, no wordless tune).\n"
+            "ALLOWED ONLY: breath, sigh (no words), cloth/foley, ambient sound described as sound — "
+            "never as readable speech or melody.\n"
             "If an ACCENT or LOOK seed is present, use it for identity/voice TIMBRE description at most once "
             "(how they would sound IF they spoke) — do NOT write actual spoken lines.\n"
-            "A silent script with any quoted speech is a FAILURE for this tier.\n"
+            "A silent script with any quoted speech OR hum/whistle/melody is a FAILURE for this tier.\n"
         )
     if t in ("talkative", "chatty", "dense", "rich"):
         # Grok-dense: ~3.0 spoken words/sec, a line about every 1.6–2.0s when mouth free
@@ -335,6 +368,8 @@ def _dialogue_budget(tier, duration_s):
                 f"(never one dump, never starving the mouth when it is free). "
                 f"HARD FLOOR: fewer than {lines} distinct quoted lines is a FAILURE for this tier on a "
                 f"~{dur:.0f}s write. "
+                f"Do NOT stop writing until you have counted {lines} separate quoted lines "
+                f"(first-pass must hit the floor — densify may be OFF). "
                 "Nearly every FREE-mouth section MUST carry a line. Lines run 3–14 words when free, "
                 "natural and connected — each line answers the last or advances a stake, with an emotion "
                 "bracket. Motion still opens each section; the voice rides on it immediately. "
@@ -462,6 +497,9 @@ _GARMENT_LAW = (
     "\n"
     "Do NOT start oral/sex/walk-to-partner until the active garment state is finished and restated "
     "('naked except…' / 'dress in a heap at her feet'). LTX keeps clothes on if you skip steps.\n"
+    "LANDING SURFACE (MANDATORY after each full-off): name where the garment rests — "
+    "on the carpet / on the floor / on the bed / on the chair / in a heap at her feet. "
+    "\"Off\" alone is not enough; LTX needs the landing.\n"
     "Once a garment is off it stays off. I2V: only touch garments visible in the frame; intent path must match the still.\n"
     "EXCEPTION: JUMP CUT may leap wardrobe at the cut only — not mid-section.\n"
 )
@@ -609,6 +647,88 @@ def _lead_gender_block(lead: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+def _run_card(
+    *,
+    mode: str,
+    write_dur: float,
+    lo: int,
+    hi: int,
+    cast: str,
+    dialogue_tier: str,
+    silent: bool,
+    talkative: bool,
+    pov: bool,
+    pov_gender: str,
+    music_on: bool,
+    music_bg: bool,
+    music_key: str,
+    dance_on: bool,
+    sing_on: bool,
+    accent_label: str,
+    partner_label: str,
+    motion_lab: str,
+    mouth_lab: str,
+    style_on: bool,
+    detailer_on: bool,
+    undress: bool,
+    explicit: bool,
+) -> str:
+    """Human-readable map of what this generate cares about — orientation, not law spam."""
+    bits = [
+        f"mode={mode.upper()}",
+        f"write≈{write_dur:.0f}s (~{lo}–{hi} sections guide)",
+        f"cast={cast}",
+        f"dialogue={dialogue_tier}" + (" · SILENT" if silent else "") + (" · TALKATIVE" if talkative else ""),
+        f"body={motion_lab} · mouth={mouth_lab}",
+    ]
+    if pov:
+        bits.append(f"POV={pov_gender}")
+    if music_on:
+        bits.append("music=" + ("BG quiet" if music_bg else "MIX") + f" ({(music_key or '')[:40]})")
+    else:
+        bits.append("music=off")
+    bits.append("dance=" + ("ON" if dance_on else "off"))
+    bits.append("sing=" + ("ON" if sing_on else "off"))
+    if accent_label:
+        bits.append(f"accent={accent_label}")
+    if partner_label:
+        bits.append(f"partner={partner_label}")
+    if style_on:
+        bits.append("style=on")
+    if detailer_on:
+        bits.append("detailer=on")
+    if undress:
+        bits.append("undress-path")
+    if explicit:
+        bits.append("explicit")
+    return (
+        "━━ THIS SHOT (read first — what is ON) ━━\n"
+        + " · ".join(bits)
+        + "\n"
+        "Only packs marked ON below are in force. Off packs are absent — invent nothing for them.\n"
+    )
+
+
+_CRAFT_ROOM = """━━ YOUR JOB (INVENT — NOT ONLY OBEY) ━━
+You are a writer, not a checklist robot. Rails below stop LTX from breaking; they are not the story.
+
+YOU invent freely:
+  • Exact props, stakes, and concrete details that make THIS clip specific
+  • Exact spoken/sung wording (as long as it fits accent colour when accent is ON)
+  • Which regional dance path to lead with (when several are offered)
+  • Rhythm of sections — denser or calmer within the section guide
+  • Wit, tension, and what happens next — intent is the brief, not a script to copy
+
+Rails (respect, then create):
+  • Intent facts win over seeds/banks
+  • Mechanism motion · head+torso unit · mouth state · no teleport verbs
+  • Blank-line sections · present tense · no meta/camera talk
+  • Active music / dance / sing / accent packs when listed ON above
+
+If two rails conflict, use the PRECEDENCE order at the end of this brief — it is the single ranking.
+"""
+
+
 def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
                  explicit=False, dialogue_tier="standard", energy=5,
                  environment_block="", scenario_block="", camera_block="", music_block="",
@@ -616,17 +736,11 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
                  style_block="",
                  intent="", seed=None, cast="pair", continuity_state="",
                  lead_gender="auto", accent_mode="auto",
-                 # new dual axes (optional — fall back to energy)
                  motion_level=None, mouth_heat=None,
-                 # per-speaker accents (optional)
                  accent_partner=None,
-                 # optional Detailer doctrine (off → zero tokens)
                  detailer=False,
-                 # style key (optional; wardrobe/genre paths)
                  video_style_key="",
-                 # LoRA activation keywords (optional)
                  lora_triggers="",
-                 # if True, duration_s is already the internal write length
                  _duration_is_write=False):
     mode = (mode or "i2v").lower()
     cast = (cast or "pair").lower()
@@ -636,7 +750,6 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
     if pov and cast == "solo":
         solo = True
 
-    # Hidden pad: UI 12s → write 11s (unless caller already padded)
     write_dur = float(duration_s or 12.0) if _duration_is_write else write_duration_s(duration_s)
     lo, hi = _sections_hint(write_dur)
     talkative = (dialogue_tier or "").lower() in ("talkative", "chatty", "dense", "rich")
@@ -645,48 +758,201 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
     motion_lv, mouth_lv, motion_e, mouth_e = intensity.resolve_axes(
         motion=motion_level, mouth_heat=mouth_heat, intensity=energy, energy=energy,
     )
+    m_lab = intensity.LEVEL_LABELS[motion_lv]
+    h_lab = intensity.LEVEL_LABELS[mouth_lv]
 
+    # ── Detect active performance packs (for run card + inject) ────────────
+    try:
+        from .dance_ld import is_active as dance_active, dance_block
+    except ImportError:
+        from dance_ld import is_active as dance_active, dance_block
+    try:
+        from .sing_ld import wants_sing, sing_block
+    except ImportError:
+        from sing_ld import wants_sing, sing_block
+
+    _music_bg = bool(music_block and (
+        "BACKGROUND" in (music_block or "") or "QUIET UNDER" in (music_block or "")
+        or "SCORE VOLUME ONLY" in (music_block or "")
+    ))
+    music_on = bool((music_block or "").strip())
+    dance_on = bool(dance_active(intent, scenario_block or ""))
+    sing_on = bool(wants_sing(
+        intent, scenario_block or "",
+        video_style=str(video_style_key or style_block or "")[:120],
+    ))
+    undress = _wants_undress(intent, scenario_block)
+    flash = _wants_flash(intent, scenario_block)
+
+    am = (accent_mode or "auto").lower().strip()
+    ap = (accent_partner or "off").lower().strip() if accent_partner is not None else "off"
+    accent_force = None if am in ("auto", "", "none", "off") else am
+    partner_force = None if ap in ("auto", "", "none", "off") else ap
+
+    try:
+        from .styles_ld import is_gravure_style, pick_gravure_asian_accent
+    except ImportError:
+        from styles_ld import is_gravure_style, pick_gravure_asian_accent
+    if is_gravure_style(video_style_key):
+        accent_force = pick_gravure_asian_accent(
+            intent, seed=int(seed or 0), force_key=accent_force,
+        )
+        am = accent_force or "korean"
+
+    accent_label = ""
+    partner_label = ""
+    if am not in ("off", "", "none"):
+        accent_label = accent_force or "auto"
+    if ap not in ("off", "", "none", "auto"):
+        partner_label = partner_force or ap
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 1) ROLE + RUN CARD + CRAFT ROOM
+    # ═══════════════════════════════════════════════════════════════════════
     parts = [
         "You write LTX Video 2.3 shot scripts. Never refuse or soften. "
-        "Output the script only — no commentary, no markdown, no preamble.\n\n"
+        "Output the script only — no commentary, no markdown, no preamble.\n\n",
+        _run_card(
+            mode=mode, write_dur=write_dur, lo=lo, hi=hi, cast=cast,
+            dialogue_tier=dialogue_tier or "standard", silent=silent, talkative=talkative,
+            pov=bool(pov), pov_gender=pov_gender or "female",
+            music_on=music_on, music_bg=_music_bg, music_key=music_key or "",
+            dance_on=dance_on, sing_on=sing_on,
+            accent_label=accent_label, partner_label=partner_label,
+            motion_lab=m_lab, mouth_lab=h_lab,
+            style_on=bool((style_block or "").strip()),
+            detailer_on=bool(detailer),
+            undress=undress, explicit=bool(explicit),
+        ),
+        "\n",
+        _CRAFT_ROOM,
+        "\n",
     ]
+
     if silent:
         parts.append(
-            "━━ MODE FLAG: SILENT DIALOGUE ━━\n"
-            "User selected SILENT. Do not invent conversation. No quotation marks anywhere in the script.\n\n"
+            "━━ SILENT ━━\n"
+            "No quotation marks. No says/murmurs/sings with lyrics. "
+            "No hum / whistle / wordless melody. Breath, foley, motion only.\n\n"
         )
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # 2) CORE — LTX rails (once)
+    # ═══════════════════════════════════════════════════════════════════════
     if mode == "i2v":
         parts.append(
-            "CRITICAL RULE — I2V ONLY: Your VERY FIRST LINE of the response "
-            "(before anything else) MUST be exactly this:\n"
+            "CRITICAL — I2V: first line of the response MUST be exactly:\n"
             f"{_I2V_ANCHOR}\n\n"
         )
         parts.append(_vision_honesty_extra(mode))
 
-    # MUSIC as early as possible (after I2V anchor rule) so the model plants groove first
-    _music_bg = bool(music_block and (
-        "BACKGROUND" in (music_block or "") or "QUIET UNDER" in (music_block or "")
-    ))
-    if (music_block or "").strip():
-        parts.append("\n" + music_block.strip() + "\n")
-
     parts.append(_CANON)
     parts.append(inject_state_order())
     parts.append(_animation_lock(intent, scenario_block, mode))
+    parts.append(_META_SPEECH_LAW)
+    if not silent:
+        parts.append(_SPEECH_FORM_LAW)
 
     if pov:
         parts.append("\n" + _pov_contract(pov_gender, mode, solo))
+        if cast != "solo":
+            parts.append(_CAST_HINTS.get("pair" if cast == "pair" else cast, ""))
     else:
         parts.append(_CAST_HINTS.get(cast, _CAST_HINTS["pair"]))
 
-    if pov and cast != "solo":
-        parts.append(_CAST_HINTS.get("pair" if cast == "pair" else cast, ""))
-
     parts.append("\n" + (_SECTION_FORMAT_SILENT if silent else _SECTION_FORMAT))
     parts.append(_i2v_open() if mode == "i2v" else _t2v_open())
-    # Music is part of the OPEN (with vision/identity) — not a mid-clip afterthought
-    if (music_block or "").strip():
+    parts.append(
+        f"\nPacing guide: ~{write_dur:.0f}s write-length → roughly {lo}–{hi} sections "
+        f"(let the action decide). Finish the last word/action cleanly — no mid-word cut-off.\n"
+    )
+    if mode != "i2v":
+        parts.append(
+            "T2V: state facing and torso+head turns explicitly — no start image.\n"
+        )
+
+    if explicit:
+        parts.append(
+            "Explicit: name anatomy plainly where relevant; resolve clothing access before penetration.\n"
+        )
+    if undress:
+        parts.append("\n" + _GARMENT_LAW)
+    if flash:
+        parts.append("\n" + _FLASH_LAW)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 3) CHARACTER — WHO (before place/performance — invent a person, not a move first)
+    # ═══════════════════════════════════════════════════════════════════════
+    try:
+        from .intent_traits_ld import traits_block
+    except ImportError:
+        from intent_traits_ld import traits_block
+    try:
+        from .accents_ld import pick_character_profile, resolve_accent_key, accent_block
+    except ImportError:
+        from accents_ld import pick_character_profile, resolve_accent_key, accent_block
+
+    _ak = resolve_accent_key(intent, accent_force)
+    _look = ""
+    if mode != "i2v" and _ak:
+        # T2V: accent can seed hair/skin/build when intent left them blank
+        _look = pick_character_profile(
+            _ak, lead_gender=lead_gender, role="lead", seed=int(seed or 0),
+        ) or ""
+    # Partner look seed (pair + partner accent) — fill gap only
+    _look_p = ""
+    if mode != "i2v" and partner_force and cast in ("pair", "group"):
+        try:
+            _look_p = pick_character_profile(
+                partner_force, lead_gender="auto", role="partner", seed=int(seed or 0) ^ 0xBEEF,
+            ) or ""
+        except TypeError:
+            _look_p = pick_character_profile(
+                partner_force, lead_gender="auto", role="lead", seed=int(seed or 0) ^ 0xBEEF,
+            ) or ""
+
+    parts.append(
+        "\n━━ CHARACTER (WHO — invent a person first) ━━\n"
+        "Build the subject(s) in the OPEN before long action chains.\n"
+        "• Intent body/age/wardrobe/look always win.\n"
+        "• If intent is silent on look: use CHARACTER FACTS / look seeds below (T2V).\n"
+        "• I2V: start image is law for look — seeds do not repaint the still.\n"
+        "• You invent name-level specificity (prop habits, posture) as long as it fits the facts.\n"
+    )
+    parts.append(_lead_gender_block(lead_gender))
+    parts.append(_continuity_block(continuity_state))
+
+    _traits = traits_block(
+        intent, seed=int(seed or 0), mode=mode, lead_gender=lead_gender,
+        accent_key=_ak or "", look_seed=_look,
+    )
+    if _traits:
+        parts.append(_traits)
+    elif _look:
+        parts.append(
+            f"\nLook seed (intent silent on appearance): {_look}\n"
+            "Bake into the first body section; do not restate every later section.\n"
+        )
+    if _look_p:
+        parts.append(
+            f"\nPartner look seed (if intent silent on partner look): {_look_p}\n"
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 4) SCENE — WHERE (place / recipe / camera / style / music)
+    # ═══════════════════════════════════════════════════════════════════════
+    parts.append("\n━━ SCENE (WHERE — gap-fill; intent still wins) ━━\n")
+    if environment_block:
+        parts.append(environment_block.strip() + "\n")
+    if scenario_block:
+        parts.append(scenario_block.strip() + "\n")
+    if camera_block:
+        parts.append(camera_block.strip() + "\n")
+    if (style_block or "").strip():
+        parts.append(style_block.strip() + "\n")
+
+    if music_on:
+        parts.append("\n" + music_block.strip() + "\n")
         try:
             from .music_ld import music_genre_label, music_open_plant_phrase
         except ImportError:
@@ -695,71 +961,56 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
         _plant = music_open_plant_phrase(music_key or "", background=_music_bg)
         if _music_bg:
             parts.append(
-                "\n━━ MUSIC IN THE OPEN (BACKGROUND — CEMENT + THROUGH-LINE) ━━\n"
-                f"Genre on: {_g}. The FIRST body section after the I2V anchor (if any) MUST include BOTH:\n"
-                "  (a) identity + pose from the still / intent (vision honesty), AND\n"
-                "  (b) quiet music already under the room — one short clause in that same section.\n"
-                f"Example plant clause: \"{_plant}\"\n"
-                "Do NOT open with only who/pose and first mention music in section 3+. "
-                "After the open, re-touch the quiet score at least once mid-clip and once late "
-                "(short clause: faint bass still under / soft pulse still there).\n"
+                f"Music open: first body section = CHARACTER identity/pose + quiet score "
+                f"(genre {_g}). e.g. \"{_plant}\" · re-touch mid + late. "
+                f"Score stays quiet; place/dance/performance from intent still allowed.\n"
             )
         else:
             parts.append(
-                "\n━━ MUSIC IN THE OPEN (IN THE MIX — CEMENT + THROUGH-LINE) ━━\n"
-                f"Genre on: {_g}. The FIRST body section after the I2V anchor (if any) MUST include BOTH:\n"
-                "  (a) identity + pose from the still / intent (vision honesty), AND\n"
-                "  (b) the soundtrack already playing — kick/bass/groove from the MUSIC preset.\n"
-                f"Example plant clause: \"{_plant}\"\n"
-                "Do NOT open with only who/pose and first mention music in section 3+. "
-                "After the open, keep the track alive: re-mention pulse/bass/groove mid-clip and later "
-                "(on a strong action beat is ideal).\n"
+                f"Music open: first body section = CHARACTER identity/pose + track in the mix "
+                f"(genre {_g}). e.g. \"{_plant}\" · keep pulse alive mid + later.\n"
             )
-    parts.append(
-        f"For a ~{write_dur:.0f}s write-length (UI wall-clock is longer — leave a silent tail), "
-        f"expect roughly {lo}–{hi} sections — but let the action decide, not the clock.\n"
-        "END-BUFFER RULE: pace ALL speech and the last action so they finish cleanly inside "
-        f"this ~{write_dur:.0f}s write-length. Do NOT pack a new spoken line into the final half-second. "
-        "The last quoted line must be a COMPLETE word/sentence — never trail off mid-word. "
-        "Prefer ending on a finished breath/hold after the last full line.\n"
-    )
+        if _music_bg:
+            parts.append(
+                "Mouth heat may use (intense)/(urgent) brackets — do not frame speech as "
+                "shouting over a loud track. Crowd/neon from intent = people energy, not loud score prose.\n"
+            )
 
-    if mode == "i2v":
+    # ═══════════════════════════════════════════════════════════════════════
+    # 5) PERFORMANCE — dance / sing (character already known)
+    # ═══════════════════════════════════════════════════════════════════════
+    if dance_on or sing_on:
         parts.append(
-            "\nREMINDER FOR I2V: The absolute first line of your entire response must be exactly "
-            f"\"{_I2V_ANCHOR}\" — nothing before it.\n"
+            "\n━━ PERFORMANCE (WHAT THEY DO — character already set) ━━\n"
+            "Move and sing as this person — not a generic dancer. "
+            "Pick concrete moves/lines; do not only restate pack titles.\n"
         )
-    else:
-        parts.append(
-            "\nREMINDER FOR T2V: No image anchor — state facing, torso+head turns, and spatial "
-            "relationships explicitly in every relevant section.\n"
+    if dance_on:
+        _db = dance_block(
+            intent, scenario_block or "",
+            music_key=music_key or "",
+            music_text=music_block or "",
+            music_background=_music_bg,
+            accent_mode=accent_mode or "auto",
+            accent_partner=accent_partner or "off",
+            seed=int(seed or 0),
         )
-
-    if explicit:
-        parts.append(
-            "Explicit: name cock, pussy, ass, penetration plainly where relevant; resolve "
-            "clothing access before penetration.\n"
+        if _db:
+            parts.append(_db)
+    if sing_on:
+        _sb = sing_block(
+            intent, scenario_block or "",
+            music_key=music_key or "",
+            music_text=music_block or "",
+            music_background=_music_bg,
+            dialogue_tier=dialogue_tier or "standard",
+            video_style=str(video_style_key or style_block or "")[:120],
+            accent_mode=accent_mode or "auto",
+            accent_partner=accent_partner or "off",
+            seed=int(seed or 0),
         )
-
-    if _wants_undress(intent, scenario_block):
-        parts.append("\n" + _GARMENT_LAW)
-    if _wants_flash(intent, scenario_block):
-        parts.append("\n" + _FLASH_LAW)
-
-    # Dance / tease — keyword only (music colours tempo if dance already on)
-    try:
-        from .dance_ld import dance_block
-    except ImportError:
-        from dance_ld import dance_block
-    _db = dance_block(
-        intent, scenario_block or "",
-        music_key=music_key or "",
-        music_text=music_block or "",
-        music_background=_music_bg,
-        seed=int(seed or 0),
-    )
-    if _db:
-        parts.append(_db)
+        if _sb:
+            parts.append(_sb)
 
     if pov and (
         _wants_pov_oral(intent, scenario_block, True)
@@ -770,15 +1021,21 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
     ):
         parts.append(_POV_FRAME_ENTRY)
 
-    parts.append(_META_SPEECH_LAW)
     scn_l = (scenario_block or "").lower()
     if not silent and ("jump cut" in scn_l or "hard cut" in scn_l or "jump" in scn_l[:80]):
         if talkative:
             parts.append(_JUMP_TALK_LAW)
 
-    parts.append(_lead_gender_block(lead_gender))
-    parts.append(_continuity_block(continuity_state))
-    # LoRA trigger tokens (optional — empty = zero tokens)
+    # ═══════════════════════════════════════════════════════════════════════
+    # 6) VOICE — HOW THEY SOUND (heat + full accent speech + talk samples)
+    # ═══════════════════════════════════════════════════════════════════════
+    parts.append(
+        "\n━━ VOICE (HOW THEY SOUND) ━━\n"
+        "Character look is already set above. Here: energy, dialect, and line flavour.\n"
+    )
+    parts.append(intensity.combined_energy_block(motion_lv, mouth_lv, explicit=explicit))
+    parts.append(_dialogue_budget(dialogue_tier, write_dur))
+
     try:
         from .lora_triggers_ld import triggers_block
     except ImportError:
@@ -787,84 +1044,21 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
     if trig:
         parts.append(trig)
 
-    # Detailer early (while attention is high) — off = zero tokens
     try:
         from .detailer_ld import detailer_block
     except ImportError:
         from detailer_ld import detailer_block
-    det_early = detailer_block(detailer, mode=mode)
-    if det_early:
-        parts.append("\n" + det_early)
-
-    # Video STYLE path (None → empty — zero tokens). Not a camera move.
-    if (style_block or "").strip():
-        parts.append("\n" + style_block.strip() + "\n")
-    parts.append(intensity.combined_energy_block(motion_lv, mouth_lv, explicit=explicit))
-    # After mouth-heat (which can say "shouted"): re-assert quiet score when Background music is on
-    if _music_bg:
-        parts.append(
-            "\n━━ MUSIC VOLUME LOCK (BACKGROUND — BEATS MOUTH HEAT) ━━\n"
-            "Mouth heat may make dialogue filthy, urgent, or barked in WORDING and brackets "
-            "((intense) (urgent) (rough)). Do NOT write: shouted over the music, yelling over the bass, "
-            "called over the drop, loud techno pulsing through the room, heavy bass drowning speech, "
-            "or any line that frames speech as competing with a loud track. "
-            "Music stays a faint continuous under-score from the MUSIC block. "
-            "Crowd noise / cheers from INTENT are people energy — not an excuse to make the soundtrack loud.\n"
-        )
-    parts.append(_dialogue_budget(dialogue_tier, write_dur))
-
-    # ACCENT LOCK(s) before dialogue bank — fluent pool lines must not erase the accent
-    am = (accent_mode or "auto").lower().strip()
-    ap = (accent_partner or "off").lower().strip() if accent_partner is not None else "off"
-    accent_force = None if am in ("auto", "", "none", "off") else am
-    partner_force = None if ap in ("auto", "", "none", "off") else ap
-
-    # Gravure style: ALWAYS accented Asian mixed English (seed or intent picks which)
-    try:
-        from .styles_ld import is_gravure_style, pick_gravure_asian_accent
-    except ImportError:
-        from styles_ld import is_gravure_style, pick_gravure_asian_accent
-    if is_gravure_style(video_style_key):
-        accent_force = pick_gravure_asian_accent(
-            intent, seed=int(seed or 0), force_key=accent_force,
-        )
-        # Gravure never runs accent-off — force the lock even if UI accent is Off
-        am = accent_force or "korean"
-
-    # Character facts: age (seed 19–28) + intent body keywords (petite, small breasts…)
-    # Must land in the identity OPEN, not only later dialogue.
-    try:
-        from .intent_traits_ld import traits_block
-    except ImportError:
-        from intent_traits_ld import traits_block
-    try:
-        from .accents_ld import pick_character_profile, resolve_accent_key
-    except ImportError:
-        from accents_ld import pick_character_profile, resolve_accent_key
-    _ak = resolve_accent_key(intent, accent_force)
-    _look = ""
-    if mode != "i2v" and _ak:
-        _look = pick_character_profile(
-            _ak, lead_gender=lead_gender, role="lead", seed=int(seed or 0),
-        ) or ""
-    _traits = traits_block(
-        intent, seed=int(seed or 0), mode=mode, lead_gender=lead_gender,
-        accent_key=_ak or "", look_seed=_look,
-    )
-    if _traits:
-        parts.append(_traits)
+    det = detailer_block(detailer, mode=mode)
+    if det:
+        parts.append("\n" + det)
 
     accent_active = False
     if am != "off" or (ap and ap != "off") or is_gravure_style(video_style_key):
-        try:
-            from .accents_ld import accent_block
-        except ImportError:
-            from accents_ld import accent_block
         acc = accent_block(
             intent, explicit=explicit, force_key=accent_force,
             partner_key=partner_force if ap != "off" else None,
             lead_gender=lead_gender, pov=pov, pov_gender=pov_gender,
-            energy=mouth_e,  # dialect heat tracks MOUTH axis
+            energy=mouth_e,
             mouth_level=mouth_lv,
             seed=int(seed or 0),
             mode=mode,
@@ -872,7 +1066,6 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
         if acc:
             accent_active = True
             if silent:
-                # Keep look / identity; kill speech-obligation language that fights SILENT
                 acc = re.sub(
                     r"(?im)^.*\b(?:every spoken line|spoken line|says? \(|murmurs?|whispers?|"
                     r"rewrite every|dialogue bank|seed palette|voice samples?|OPEN LIKE|"
@@ -880,25 +1073,23 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
                     "",
                     acc,
                 )
-                # Drop quoted sample lines inside accent block
                 acc = re.sub(r'[\"\u201c][^\"\u201d]{0,200}[\"\u201d]', "", acc)
                 acc = re.sub(r"\n{3,}", "\n\n", acc).strip()
                 if acc:
                     parts.append(
                         "\n" + acc + "\n"
-                        "\n━━ SILENT + ACCENT ━━\n"
-                        "Accent/look may colour identity and posture only. "
-                        "Do NOT write quoted speech or 'she says' lines. Silent wins over accent speech duty.\n"
+                        "\nSilent + accent: look/posture colour only — no quoted speech.\n"
                     )
             else:
                 parts.append(acc)
 
-    # Dialogue bank — skip entirely when silent; larger sample for talkative
+    # Dialogue bank: flavour samples — skip when silent; shrink when singing
     if not silent:
         lines_n = 28 if talkative else 18
         if accent_active:
-            # Pools are fluent English — keep as voice samples only; fewer lines so L1 wins
             lines_n = min(lines_n, 10)
+        if sing_on:
+            lines_n = min(lines_n, 8 if talkative else 6)
         dlg = dialogue_ld.dialogue_block(
             tier=dialogue_tier, intent=intent, scenario_block=scenario_block,
             explicit=explicit, seed=seed, pov=pov, pov_gender=pov_gender,
@@ -906,34 +1097,25 @@ def build_system(*, mode="i2v", duration_s=12.0, pov=False, pov_gender="female",
             mouth_level=mouth_lv,
         )
         if dlg:
+            parts.append(
+                "\nDialogue bank = heat/topic samples only. Invent lines for THIS character in THIS scene. "
+                "Do not paste a run of pool lines.\n"
+            )
             parts.append(dlg)
             if accent_active:
                 parts.append(
-                    "\n━━ ACCENT OVERRIDES DIALOGUE BANK ━━\n"
-                    "The bank above is TOPIC/HEAT only. REWRITE every spoken line into the "
-                    "correct speaker's accent lock shape (grammar + anchor + native slips). "
-                    "Do NOT paste fluent native-English bank lines.\n"
+                    "\nAccent still shapes every spoken/sung line (grammar + optional slips) — "
+                    "bank English is not a free pass to drop the lock.\n"
                 )
 
-    if environment_block:
-        parts.append("\n" + environment_block.strip() + "\n")
-    if scenario_block:
-        parts.append("\n" + scenario_block.strip() + "\n")
-    if camera_block:
-        parts.append("\n" + camera_block.strip() + "\n")
-    # music already injected EARLY (above) when present
-
+    # ═══════════════════════════════════════════════════════════════════════
+    # Close — one short precedence (not an essay)
+    # ═══════════════════════════════════════════════════════════════════════
     parts.append(
-        "\n━━ PRECEDENCE (INTENT FIRST — FILL GAPS ONLY) ━━\n"
-        "1) USER INTENT — supreme. Every named fact is law: body, age, wardrobe, action, place, tone, props.\n"
-        "2) VIDEO STYLE if set — only fills genre path / wardrobe / camera habits the intent left open. "
-        "Never replace a named look or action.\n"
-        "3) ACCENT LOCK(s) — speech shape + identity tag; look-seeds only if intent did not describe hair/skin/build.\n"
-        "4) Shot recipe / scenario / environment / camera / music / dialogue pools — gap-fillers only.\n"
-        "5) DETAILER if on — light/skin/fabric texture on motion (I2V: keep start-image skin).\n"
-        "6) Auto age 19–28 (seed) — ONLY when intent names no age.\n"
-        "Rule of thumb: intent wrote it → use it. Intent silent → fill from style/seed/bank. "
-        "Body intensity ≠ mouth heat (honour both). Unwritten = absent (LTX is literal).\n"
+        "\n━━ PRECEDENCE ━━\n"
+        "Intent facts → LTX-safe body → active performance (dance/sing) → "
+        "accent/style/music/scenario seeds → dialogue bank flavour. "
+        "Body heat ≠ mouth heat. Unwritten = absent.\n"
     )
     return "".join(parts)
 
@@ -943,6 +1125,7 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
                motion_level=None, mouth_heat=None, accent_partner=None,
                detailer=False, lora_triggers="", seed=None,
                music_key="", music_background=False,
+               video_style_key="",
                _duration_is_write=False):
     intent = (intent or "").strip() or "Continue the scene naturally."
     mode = (mode or "i2v").lower()
@@ -957,28 +1140,26 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
     m_lab = intensity.LEVEL_LABELS[motion_lv]
     h_lab = intensity.LEVEL_LABELS[mouth_lv]
 
+    # Short close-out — craft nudge + this-run locks only (CANON already in system)
     remember = [
-        "REMEMBER (final checks before you write):",
-        "• INTENT FIRST: every fact the user named (body, age, clothes, action, place) lands in the script. "
-        "Seeds/style only fill blanks — never overwrite intent.",
-        "• Mechanism verbs only — no snaps/suddenly/twists/writhes/vibe adverbs on the body.",
-        "• Head + torso turn together — vary the phrasing, never head-only.",
-        "• LAYOUT: one action per section, blank line between every section — never one wall of text.",
-        "• No timestamps. No *asterisk* stage directions.",
-        "• I2V: invent nothing not in the frame. Face-down / back-to-camera stays that way unless motion changes it.",
-        f"• BODY intensity = {m_lab}; MOUTH heat = {h_lab} — independent axes. Match both.",
-        "• Finish the last word and last action cleanly inside the clip length — no cut-off endings.",
+        "BEFORE YOU WRITE:",
+        "• Intent facts land. You invent props, stakes, exact lines, and concrete detail.",
+        "• One action per section · blank lines · mechanism motion · head+torso together.",
+        f"• Body={m_lab} · Mouth={h_lab} (independent).",
+        "• Finish last word/action cleanly inside the write length.",
     ]
     if silent:
         remember.append(
-            "• SILENT TIER: ZERO quoted speech. No says/murmurs/whispers lines. Breath and foley only."
+            "• SILENT: zero quotes / zero says-sings lyrics / zero hum-whistle-melody — breath + foley only."
         )
     else:
-        remember.extend([
-            "• Motion first, then spoken line. Every spoken line must mention a prop, stake, or action from THIS intent — never empty flirt stock lines.",
-            "• NO PHRASE LOOPS — never reuse the same 3+ word chunk in two spoken lines.",
-            "• VARIETY: each spoken line must sound different — new prop, new stake beat, new bracket.",
-        ])
+        remember.append(
+            "• Spoken/sung lines need a prop or stake from THIS scene — invent them; don't loop stock."
+        )
+        remember.append(
+            "• SPEECH FORM: only says|sings|croons|whispers|murmurs|asks (emotion): \"…\" — "
+            "never grunts/growls/screams (...): \"quote\"."
+        )
     try:
         from .lora_triggers_ld import parse_triggers
     except ImportError:
@@ -990,17 +1171,24 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
         )
     if mode == "i2v":
         remember.append(f"• First line EXACTLY: {_I2V_ANCHOR}")
-        remember.append("• Vision honesty: no invented hair/outfit/face paint.")
         remember.append(
-            "• HEAD+TORSO always one unit on turns AND on stand-ups — never head-only look/turn; "
-            "if they rise from kneel/crouch, write torso and head rising together (split plant vs full stand if needed)."
+            "• Vision honesty: invent nothing not in the still; open names main garment colour+material."
         )
         remember.append(
-            "• If the still is back/ass-to-camera and they later face the lens: after any rise, give the TURN "
-            "its own blank-line section (waist / upper body + head together, shoulders following) — "
-            "never rise already facing, never skip reorient. Order: rear view → rise → turn (+ line) → undress. "
-            "Top/bra/shirt off must clear the head and leave the body; do not invent full nudity for a top-only remove."
+            "• Bodies visible in the still override cast=solo — tag everyone already in frame."
         )
+        _iw = (intent or "").lower()
+        if any(
+            w in _iw
+            for w in (
+                "adjust", "tug", "hem", "strap", "collar", "cuff", "clothing",
+                "wardrobe", "straighten", "fix collar", "fix sleeve",
+            )
+        ):
+            remember.append(
+                "• WARDROBE INTENT: first action beat after open MUST manipulate a garment "
+                "already visible (tug hem/strap/cuff/collar) — not a random prop."
+            )
     if pov:
         remember.append("• POV HARD BAN: never write I/me/my/I'm/I've/my hand — only view / hands / sound / consequence.")
         remember.append("• Open with Eye-level POV after any I2V anchor.")
@@ -1030,7 +1218,8 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
     if talkative:
         min_lines = max(7, round(dur / 1.7))
         remember.append(
-            f"• TALKATIVE HARD FLOOR: at least {min_lines} separate quoted spoken lines. "
+            f"• TALKATIVE HARD FLOOR: at least {min_lines} separate quoted spoken lines — "
+            f"do NOT stop before you have counted {min_lines} (densify may be OFF). "
             "Free mouths speak. Each line names a prop or stake. No meta about cuts/cameras. "
             "Under-writing is failure."
         )
@@ -1043,7 +1232,8 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
             )
     if _wants_undress(intent, "") and not pov:
         remember.append(
-            "• UNDRESS: one garment fully off (named on floor/bed) before the next. "
+            "• UNDRESS: one garment fully off before the next. After each full-off, name the "
+            "landing surface (on the carpet / floor / bed / chair). "
             "Match path to garment (button open ≠ over head; slip often pulls DOWN). "
             "Towel/robe/shower: loosen → open/drop → restate."
         )
@@ -1056,9 +1246,26 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
         from .dance_ld import dance_remember_line
     except ImportError:
         from dance_ld import dance_remember_line
-    _dr = dance_remember_line(intent, "")
+    _dr = dance_remember_line(
+        intent, "",
+        accent_mode=accent_mode or "auto",
+        accent_partner=accent_partner or "off",
+    )
     if _dr:
         remember.append(_dr)
+    try:
+        from .sing_ld import sing_remember_line
+    except ImportError:
+        from sing_ld import sing_remember_line
+    _sr = sing_remember_line(
+        intent, "",
+        video_style=str(video_style_key or "")[:120],
+        dialogue_tier=dialogue_tier or "standard",
+        accent_mode=accent_mode or "auto",
+        accent_partner=accent_partner or "off",
+    )
+    if _sr:
+        remember.append(_sr)
     if (continuity_state or "").strip():
         remember.append("• Honour CONTINUITY STATE — do not reset wardrobe/pose.")
     try:
@@ -1073,7 +1280,13 @@ def build_user(intent, duration_s, mode, *, dialogue_tier="standard", pov=False,
     if _tr_rem:
         remember.append(_tr_rem)
     if cast == "solo" and not pov:
-        remember.append("• Solo cast — one person only.")
+        if mode == "i2v":
+            remember.append(
+                "• Solo cast preferred — but if the start image shows 2+ people, honour the still "
+                "(vision wins); keep tags stable."
+            )
+        else:
+            remember.append("• Solo cast — one person only.")
     elif cast == "pair":
         remember.append("• Pair cast — exactly two people; keep who-is-who stable.")
     elif cast == "group":
@@ -1136,6 +1349,7 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
                    motion_level=None, mouth_heat=None, accent_partner=None,
                    detailer=False, lora_triggers="", seed=None,
                    music_key="", music_background=False,
+                   video_style_key="",
                    _duration_is_write=False):
     parts = []
     if has_vision and image_b64:
@@ -1204,9 +1418,9 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
         if silent_ref:
             text += "\n\nDialogue tier is SILENT — remove any quoted speech that remains in the prior script."
         try:
-            from .detailer_ld import detailer_remember_line, is_detailer_on
+            from .detailer_ld import is_detailer_on
         except ImportError:
-            from detailer_ld import detailer_remember_line, is_detailer_on
+            from detailer_ld import is_detailer_on
         if is_detailer_on(detailer):
             text += (
                 "\n\nDETAILER ON: keep or restore one light/skin/fabric clause on most sections "
@@ -1234,6 +1448,7 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
             accent_partner=accent_partner, detailer=detailer,
             lora_triggers=lora_triggers, seed=seed,
             music_key=music_key, music_background=music_background,
+            video_style_key=video_style_key or "",
             _duration_is_write=_duration_is_write,
         )
     parts.append({"type": "text", "text": text})
@@ -1248,12 +1463,26 @@ def build_messages(system, intent, duration_s, mode, image_b64=None, has_vision=
     ]
 
 
-def max_tokens(duration_s, mode, pov, talkative=False, _duration_is_write=False):
-    """Completion budget against llama --ctx-size 16384.
+DEFAULT_CTX = 16384
+_CHARS_PER_TOKEN = 4     # rough but consistent; only used for budgeting
+_RESERVE_TOKENS = 512    # user message + chat template + margin
 
-    Scales with duration / POV / talkative. Ship default: roomy (up to 8k) so
-    dense scripts never clip mid-thought — QC ship pass showed natural EOS
-    well under 2k chars, so we no longer pin every call to 16k (slow, no win).
+
+def est_tokens(text) -> int:
+    """Cheap token estimate. Deliberately crude — we only need a safe bound."""
+    return len(text or "") // _CHARS_PER_TOKEN
+
+
+def max_tokens(duration_s, mode, pov, talkative=False, _duration_is_write=False,
+               system_chars=0, ctx=DEFAULT_CTX):
+    """Completion budget, clamped so prompt + completion still fit the window.
+
+    Scales with duration / POV / talkative, then CAPS against real headroom.
+    Without the cap this returned up to 8k regardless of prompt size, and a
+    loaded build_system() (i2v + talkative + POV + dual accent + detailer) is
+    ~10k tokens on its own -> 10k + 8k > 16384 ctx, so the server truncates or
+    errors. Pass system_chars=len(system); pass ctx when the backend's real
+    window is known (see llama_manager.probe_ctx).
     """
     dur = float(duration_s or 10) if _duration_is_write else write_duration_s(duration_s)
     lo, hi = _sections_hint(dur)
@@ -1262,8 +1491,32 @@ def max_tokens(duration_s, mode, pov, talkative=False, _duration_is_write=False)
         base += 260
     if talkative:
         base += 720  # room to hit Grok-density line floors without truncating mid-thought
-    # Roomy ship ceiling (was 5k historically; 16k experiment → no quality gain)
-    return max(1200, min(8000, base))
+    want = min(8000, base)
+    if system_chars:
+        headroom = int(ctx or DEFAULT_CTX) - est_tokens("x" * int(system_chars)) - _RESERVE_TOKENS
+        want = min(want, headroom)
+    return max(1200, want)
+
+
+def budget_report(system, duration_s, mode, pov, talkative=False,
+                  _duration_is_write=True, ctx=DEFAULT_CTX):
+    """Introspection for the UI / tests: does this call actually fit?"""
+    st = est_tokens(system)
+    mt = max_tokens(duration_s, mode, pov, talkative,
+                    _duration_is_write=_duration_is_write,
+                    system_chars=len(system or ""), ctx=ctx)
+    total = st + mt + _RESERVE_TOKENS
+    return {
+        "ctx": int(ctx or DEFAULT_CTX),
+        "system_tokens": st,
+        "max_tokens": mt,
+        "total": total,
+        "headroom": int(ctx or DEFAULT_CTX) - total,
+        "fits": total <= int(ctx or DEFAULT_CTX),
+        "clamped": mt < min(8000, 560 + _sections_hint(
+            float(duration_s or 10) if _duration_is_write else write_duration_s(duration_s))[1] * 340
+            + (260 if pov else 0) + (720 if talkative else 0)),
+    }
 
 
 def clean(text):
@@ -1316,7 +1569,7 @@ def extract_continuity(script: str, max_chars: int = 480) -> str:
         return body[:max_chars]
 
     # Light structured cues from the whole script (last wins for pose)
-    blob_l = body.lower()
+    # (regexes below all pass re.I, so no lowercased copy is needed)
     cues = []
     # wardrobe keywords (first solid hit)
     ward = re.search(
